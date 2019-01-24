@@ -1,0 +1,12 @@
+# large file
+*.npy
+*.pkl
+
+
+# ipython temp file
+.ipynb_checkpoints/
+
+
+# python
+*.pyc
+__pycache__/
