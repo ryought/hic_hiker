@@ -45,11 +45,13 @@ def get_contacts_direct(r1_samfile, r2_samfile):
         N += 1
     print(N)
     
+
     print('convert to numpy')
     for i in tqdm(range(size)):
         for j in range(i+1, size):
-            contacts[i][j] = (np.array([x[0] for x in contacts[i][j]]),
-                              np.array([x[1] for x in contacts[i][j]]))
+            contacts[i][j] = (np.array([x[0] for x in contacts[i][j]], dtype=np.uint16),
+                              np.array([x[1] for x in contacts[i][j]], dtype=np.uint16))
+    
     return contacts
 
 # main function
