@@ -25,7 +25,15 @@ def get_contacts_direct(r1_samfile, r2_samfile):
     contacts = [[[] for y in range(size)] for x in range(size)]
     N = 0
     for r1, r2 in tqdm(zip(sam_r1, sam_r2)):
-        assert r1.query_name == r2.query_name
+        # 
+        while r1.is_secondary or r1.is_supplementary:
+            r1 = next(sam_r1)
+        while r2.is_secondary or r2.is_supplementary:
+            r2 = next(sam_r2)
+        if r1.query_name != r2.query_name:
+            print('assertion failed')
+            print(r1.query_name, r2.query_name)
+            break
         if (not r1.is_unmapped) and (not r2.is_unmapped):
             x1, x2 = r1.reference_id, r2.reference_id
             p1, p2 = r1.reference_start, r2.reference_start
