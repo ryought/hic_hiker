@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.neighbors.kde import KernelDensity
-from tqdm import tqdm_notebook as tqdm
+from tqdm import tqdm as tqdm
 import pysam
 
 """

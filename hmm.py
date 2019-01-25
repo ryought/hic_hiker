@@ -45,6 +45,24 @@ def get_emission_probability(i, j, prob, k=2):
                 # x < yになってる
                 p += prob[ (i-1+x)*2 + layout[x], (i-1+y)*2 + layout[y] ]
         return p
+    
+def show_benchmark(layout, P, k, head=10):
+    """debug用のbenchmark関数"""
+    N = 0
+    for i in range(len(layout)):
+        N += 1
+        if N == head:
+            break
+        if layout[i] == 0:
+            #continue
+            pass
+        print(layout[i], end=' ')
+        for j in range(len(P[i])):
+            if j == np.argmax(P[i]):
+                print('\x1b[31m{:.2e}\x1b[0m'.format(P[i][j]), end=' ')
+            else:
+                print('{:.2e}'.format(P[i][j]), end=' ')
+        print(end='\n')
 
 def run_hmm(prob, k=4, n=5000, debug=False):
     """
