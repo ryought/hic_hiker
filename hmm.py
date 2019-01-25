@@ -5,8 +5,8 @@ import os
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '.'))
 
-#np.set_printoptions(formatter={'float': '{: 0.3e}'.format}, linewidth=200)
-np.set_printoptions(suppress=True)
+np.set_printoptions(formatter={'float': '{: 0.10e}'.format}, linewidth=200)
+#np.set_printoptions(suppress=True)
 
 """
 HMM module
@@ -58,26 +58,50 @@ def show_benchmark(layout, pro, k, head=10):
     #P = np.exp(pro)
     P = pro
     N = 0
-    print(layout)
-    for i in range(len(layout)):
+    #print(layout)
+    for i in range(len(layout)-k):
         N += 1
         if N == head:
+            #break
             continue
         if layout[i] == 0:
-            #continue
-            pass
+            continue
+            #pass
         
         # layout 表示部分
-        print(i, layout[i], end=' ')
+        U = P[i+1][0:2**(k-1)]
+        D = P[i+1][2**(k-1):2**k]
+        sU = log_sum(U)
+        sD = log_sum(D)
+        sUD = log_add(sU, sD)
+        print('\x1b[31m', i, layout[i], '\x1b[0m', np.exp(sU-sUD), np.exp(sD-sUD))
         
-        for j in range(len(P[i])):
-            if j == np.argmax(P[i]):
-                print('\x1b[31m{:.7e}\x1b[0m'.format(P[i][j]), end=' ')
+        if False:
+            for j in range(len(P[i])):
+                if j == np.argmax(P[i]):
+                    print('\x1b[31m{:.7e}\x1b[0m'.format(P[i][j]), end=' ')
+                else:
+                    print('{:.7e}'.format(P[i][j]), end=' ')
+        
+        #print(P[i+1])
+        
+    for step in range(k, 0, -1):
+        i = len(layout)-step
+        LP = P[len(layout)-k+1]
+        # step-1個右にシフトして、1とandとった奴が0の時上、1の時下 (最下位ビットが0ならU)
+        U, D = [], []
+        for j in range(len(LP)-1):
+            if (j >> (step-1) & 1) == 0:
+                #rint(j)
+                U.append(LP[j])
             else:
-                print('{:.7e}'.format(P[i][j]), end=' ')
-        
-        print(end='\n')
-        print(np.exp(P[i+1][0:2**(k-1)]).sum(), np.exp(P[i+1][2**(k-1):2**k]).sum())
+                D.append(LP[j])
+        sU = log_sum(U)
+        sD = log_sum(D)
+        sUD = log_add(sU, sD)
+        print('\x1b[31m', i, layout[i], '\x1b[0m', np.exp(sU-sUD), np.exp(sD-sUD))
+            
+        #print(P[len(layout)-k+1], len(layout)-k+1)
 
 def run_hmm(prob, k=4, n=5000, debug=False):
     """
@@ -192,6 +216,11 @@ def run_hmm(prob, k=4, n=5000, debug=False):
     
     return orientation, P
 
+def log_sum(L):
+    S = L[0]
+    for i in range(1, len(L)):
+        S = log_add(S, L[i])
+    return S
 
 def log_add(lA, lB):
     """
