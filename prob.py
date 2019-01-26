@@ -3,10 +3,51 @@ import matplotlib.pyplot as plt
 from sklearn.neighbors.kde import KernelDensity
 from tqdm import tqdm as tqdm
 import pysam
+import argparse
 
 """
 確率を求める関係のやつ
 """
+
+def infer_from_longest_contig(samr1_filename, samr2_filename):
+    """
+    実データで使う用
+    一番長いコンティグ(or thresholdを設ける)のgapを使う
+    ヒストグラム、fitted polylineを描画する機能をつける
+    個数が不足していたら伸ばすなど
+    TODO
+    """
+    sam_r1 = pysam.AlignmentFile(samr1_filename, 'r')
+    sam_r2 = pysam.AlignmentFile(samr2_filename, 'r')
+    size = sam_r1.nreferences
+
+def get_intercontig_contacts_fast(samr1_filename, samr2_filename):
+    """
+    multiple hitを除いてないからどうなることやらバージョン
+    """
+    sam_r1 = pysam.AlignmentFile(samr1_filename, 'r')
+    sam_r2 = pysam.AlignmentFile(samr2_filename, 'r')
+    size = sam_r1.nreferences
+    inter = []
+    N = 0
+    for r1, r2 in tqdm(zip(sam_r1, sam_r2)):
+        # 同時に読み込む
+        while r1.is_secondary or r1.is_supplementary:
+            r1 = next(sam_r1)
+        while r2.is_secondary or r2.is_supplementary:
+            r2 = next(sam_r2)
+        if r1.query_name != r2.query_name:
+            print('assertion failed')
+            print(r1.query_name, r2.query_name)
+            break
+
+        if (not r1.is_unmapped) and (not r2.is_unmapped):
+            if r1.reference_id == r2.reference_id:
+                p1, p2 = r1.reference_start, r2.reference_start
+                inter.append(abs(p1-p2))
+                N += 1
+    print(N)
+    return np.array(inter)
 
 def get_intercontig_contacts(samr1_filename, samr2_filename):
     sam_ref_r1 = pysam.AlignmentFile(samr1_filename, 'r')
@@ -71,6 +112,52 @@ def get_prob_mixed_numpy(contacts, size, near_estimator, distant_estimator):
                     if len(d) > 0:
                         p = distant_estimator(d).sum()
                         prob[i*2+d1, j*2+d2] = p
+    return prob
+
+def get_prob_pandas(df, size, lengths, estimator):
+    """
+    pandasを読み込むよ
+    contactsよりもメモリ消費が少ないかも
+    今の所一番いいやつ
+    """
+    # 値の切り替わりの位置を探す
+    df.sort_values(by=['X1', 'X2'], inplace=True)
+    x1, x2 = df['X1'].values, df['X2'].values
+    start_pos = []
+    L = len(x1)
+    a, b = x1[0], x2[0]
+    start_pos.append((x1[0], x2[0], 0))
+    for i in range(1, L):
+        if x1[i] == a and x2[i] == b:
+            continue
+        else:
+            start_pos.append((x1[i], x2[i], i))
+            a, b = x1[i], x2[i]
+    # 確率の計算
+    prob = np.zeros((size*2, size*2))
+    #prob = 0  # 接触がないところは0とする np.infの方がいい？
+    L = len(start_pos)
+    for k in tqdm(range(L)):
+        # i,jの接触
+        i, j, start = start_pos[k]
+        if k == L-1:
+            end = L
+        else:
+            _, _, end = start_pos[k+1]
+        if i == j:
+            continue
+        C = df[start:end]
+        P1 = C['P1'].values
+        P2 = C['P2'].values
+        # 長さ
+        L1 = lengths[i]
+        L2 = lengths[j]
+        # gap: i+1,..j-1のlenの合計
+        gap = sum([lengths[k] for k in range(i+1, j)])
+        for d1, d2 in [(0, 0), (0, 1), (1, 0), (1, 1)]:
+            d = get_dists_numpy(P1, P2, d1, d2, L1, L2, gap)
+            p = estimator(d).sum()
+            prob[i*2+d1, j*2+d2] = p
     return prob
 
 def get_prob_numpy(contacts, size, estimator):
@@ -175,17 +262,25 @@ def calc_prob_parallel(contacts, ans, kde):
     
 if __name__ == '__main__':
     psr = argparse.ArgumentParser()
-    psr.add_argument('contacts_pkl', help='pickle filename of contacts')
-    psr.add_argument('n', type=int, help='number of contigs. O(n)')
-    psr.add_argument('--prob', help='npy file of probabilities. You can create this file by running load.py')
-    psr.add_argument('--debug', help='run with test data', action='store_true')
+    psr.add_argument('--pickle', help='pickle filename of contacts')
+    psr.add_argument('--pandas', help='pandas')
+    psr.add_argument('--ref_r1', help='reference')
+    psr.add_argument('--ref_r2', help='reference')
+    psr.add_argument('--sam', help='contig sams for lengths')
+    psr.add_argument('output', help='output npy filename')
     args = psr.parse_args()
     
-    if args.debug:
-        _ = run_hmm(None, k=args.k, n=args.n, debug=True)
-    elif args.prob:
-        print(args.prob, args.k, args.n)
-        prob = np.load(args.prob)
-        _ = run_hmm(prob, k=args.k, n=args.n)
-    else:
-        print('you should select either --prob prob.npy or --debug option to run hmm.')
+    if args.ref_r1 and args.ref_r2:
+        inter = get_intercontig_contacts(args.ref_r1, args.ref_r2)
+        f, raw = get_kde_polyfit_estimator(inter, N=100000, bandwidth=200, maxlength=150000, points=500, degree=50)
+        
+    if args.pandas:
+        import feather
+        df = feather.read_dataframe(args.pandas)
+        size = max(df['X1'].max(), df['X2'].max()) + 1
+        sam = pysam.AlignmentFile(args.sam, 'r')
+        lengths = sam.lengths
+        #print(lengths, size)
+        prob = get_prob_pandas(df, size, lengths, f)
+        np.save(args.output, prob)
+        

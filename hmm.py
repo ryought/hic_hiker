@@ -15,6 +15,13 @@ HMM module
 - forward and backward algorithm for probability of each state
 """
 
+
+"""
+TODO
+- orderingの情報を入れられるようにする
+多分emission probabilityのところに組み込めば良いだけだと思う
+"""
+
 def create_transition_matrix(k=2):
     n = 2**k
     A = np.zeros((n+1, n+1))

@@ -1,6 +1,8 @@
-filename='../analysis/3D_DNA/answer70gap/vc2010_25000.final.assembly'
+# filename='../../analysis/3D_DNA/answer70gap/vc2010_25000.final.assembly'
+filename='../../analysis/3D_DNA/mock/mock.final.assembly'
 print(filename)
 C = 0
+T = 0
 with open(filename) as f:
     for l in f:
         if l[0] != '>':
@@ -13,6 +15,7 @@ with open(filename) as f:
                     else:
                         B += 1
                 print(A, B)
+                T += min(A, B)
             else:
                 C += 1
-print(A, B, C)
+print(C, T)
