@@ -210,17 +210,24 @@ def get_prob_pandas(df, lengths, estimator, ordering=None, remove_repetitive=Fal
         # 長さ
         L1 = lengths[i]
         L2 = lengths[j]
-        # 配置上の場所
-        #I = order_map[i]
-        #J = order_map[j]
-        # gap: i+1,..j-1のlenの合計
-        gap = sum([ lengths[k] for k in range(i+1, j) ])
-        #gap = sum([ lengths[ordering[k]] for k in range(min(I,J)+1, max(I,J)) ])
+        if ordering:
+            # 配置上の場所
+            I = order_map[i]
+            J = order_map[j]
+            gap = sum([ lengths[ordering[k]] for k in range(min(I,J)+1, max(I,J)) ])
+        else:
+            # gap: i+1,..j-1のlenの合計
+            gap = sum([ lengths[k] for k in range(i+1, j) ])
+            
         for d1, d2 in [(0, 0), (0, 1), (1, 0), (1, 1)]:
             d = get_dists_numpy(P1, P2, d1, d2, L1, L2, gap)
             p = estimator(d).sum()
-            prob[i*2+d1, j*2+d2] = p
-            prob[j*2+d2, i*2+d1] = p
+            if ordering:
+                prob[I*2+d1, J*2+d2] = p
+                prob[J*2+d2, I*2+d1] = p
+            else:
+                prob[i*2+d1, j*2+d2] = p
+                prob[j*2+d2, i*2+d1] = p
     return prob
 
 def get_prob_numpy(contacts, size, estimator):
