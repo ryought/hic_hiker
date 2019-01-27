@@ -110,7 +110,7 @@ def show_benchmark(layout, pro, k, head=10):
             
         #print(P[len(layout)-k+1], len(layout)-k+1)
 
-def run_hmm(prob, k=4, n=5000, debug=False):
+def run_hmm(prob, k=4, n=5000, debug=False, short=False):
     """
     k: number of contig in one state
     n: number of contig
@@ -170,6 +170,10 @@ def run_hmm(prob, k=4, n=5000, debug=False):
         print(j)
         orientation.append(path[i] >> (k-1) & 1)
     print(k, n, sum(orientation))
+    
+    if short:
+        # 各状態の計算はせずに、向きだけ必要な時
+        return orientation, None, state
     
     
     # 各状態での確率の算出
