@@ -23,13 +23,17 @@ def get_contacts_df(r1_samfile, r2_samfile):
     sam_r1 = pysam.AlignmentFile(r1_samfile, 'r')
     sam_r2 = pysam.AlignmentFile(r2_samfile, 'r')
     size = sam_r1.nreferences
-    R, X1, X2, P1, P2 = [], [], [], [], []
+    R, X1, X2, P1, P2, U1, U2 = [], [], [], [], [], [], []
     N = 0
     for r1, r2 in tqdm(zip(sam_r1, sam_r2)):
         while r1.is_secondary or r1.is_supplementary:
             r1 = next(sam_r1)
+            if R and R[-1] == r1.query_name:
+                U1[-1] = False
         while r2.is_secondary or r2.is_supplementary:
             r2 = next(sam_r2)
+            if R and R[-1] == r2.query_name:
+                U2[-1] = False
         if r1.query_name != r2.query_name:
             print('assertion failed')
             print(r1.query_name, r2.query_name)
@@ -44,15 +48,22 @@ def get_contacts_df(r1_samfile, r2_samfile):
                 X2.append(x2)
                 P1.append(p1)
                 P2.append(p2)
+                U1.append(True)
+                U2.append(True)
             elif x1 > x2:
                 X1.append(x2)
                 X2.append(x1)
                 P1.append(p2)
                 P2.append(p1)
+                U1.append(True)  # unique mapping
+                U2.append(True)
         N += 1
     print(N)
     df = pd.DataFrame(
-        data={'R':R, 'X1':X1, 'X2':X2, 'P1':P1, 'P2':P2}
+        data={'R':R, \
+              'X1':X1,'X2':X2, \
+              'P1':P1,'P2':P2, \
+              'U1':U1,'U2':U2}
     )
     return df, size
 

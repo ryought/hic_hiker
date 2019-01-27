@@ -221,7 +221,7 @@ def run_hmm(prob, k=4, n=5000, debug=False):
         print(np.exp(A))
         print(np.exp(P))
     
-    return orientation, P
+    return orientation, P, state
 
 def log_sum(L):
     S = L[0]

@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.neighbors.kde import KernelDensity
-from tqdm import tqdm as tqdm
+from tqdm import tqdm_notebook as tqdm
 import pysam
 import argparse
 
@@ -9,17 +9,33 @@ import argparse
 確率を求める関係のやつ
 """
 
-def infer_from_longest_contig(samr1_filename, samr2_filename):
+def infer_from_longest_contig(df, sam_filename, output_filename, remove_repetitive=False, maxlength=150000):
     """
     実データで使う用
     一番長いコンティグ(or thresholdを設ける)のgapを使う
     ヒストグラム、fitted polylineを描画する機能をつける
     個数が不足していたら伸ばすなど
-    TODO
     """
-    sam_r1 = pysam.AlignmentFile(samr1_filename, 'r')
-    sam_r2 = pysam.AlignmentFile(samr2_filename, 'r')
-    size = sam_r1.nreferences
+    sam = pysam.AlignmentFile(sam_filename, 'r')
+    lengths = np.array(sam.lengths)
+    max_contig_id = np.argmax(lengths)
+    print('use longest contig', max_contig_id, lengths[max_contig_id], sam.get_reference_name(max_contig_id))
+    #size = sam_r1.nreferences
+    if remove_repetitive:
+        C = df[(df['X1']==max_contig_id) & (df['X2']==max_contig_id) \
+               & (df['U1']==True) & (df['U2']==True)]
+    else:
+        C = df[(df['X1']==max_contig_id) & (df['X2']==max_contig_id)]
+    inter = np.abs(C['P1'].values - C['P2'].values)
+    print('# of contacts:', len(inter))
+    
+    f, raw = get_kde_polyfit_estimator(inter, \
+                                       N=100000, bandwidth=200, \
+                                       maxlength=maxlength, \
+                                       points=500, degree=50)
+    estimator_benchmark(inter, raw, f, maxlength=maxlength+50000)
+    return f
+
 
 def get_intercontig_contacts_fast(samr1_filename, samr2_filename):
     """
@@ -75,8 +91,9 @@ def get_swapped_prob(prob, indexes=None):
             new_prob[:, [2*i, 2*i+1]] = new_prob[:, [2*i+1, 2*i]]
     return new_prob
 
-def get_kde_estimator(samples, N=10000, bandwidth=100, debug=False):
+def get_kde_estimator(samples, N=10000, bandwidth=200, debug=False):
     """sample(サンプル点のリスト)をKDEでノンパラメトリックにフィッティングして、その識別器を返す"""
+    np.random.seed(0)
     downsampled = np.random.choice(samples, N)
     X = downsampled.reshape(-1, 1)
     kde = KernelDensity(kernel='gaussian', bandwidth=bandwidth).fit(X)
@@ -84,12 +101,38 @@ def get_kde_estimator(samples, N=10000, bandwidth=100, debug=False):
         print('debug')
     return (lambda x: kde.score_samples(x.reshape(-1, 1)))
 
-def get_kde_polyfit_estimator(samples, N=10000, bandwidth=100, maxlength=40000, points=200, degree=20):
+def get_kde_polyfit_estimator(samples, N=100000, bandwidth=200, maxlength=150000, points=500, degree=50):
     """多項式近似したバージョンを返すやつ 一応両方かえす"""
     f = get_kde_estimator(samples, N, bandwidth)
     x = np.linspace(1, maxlength, points)
     z = np.polyfit(x, f(x), degree)
-    return np.poly1d(z), f   # == (lambda x: np.poly1d(z)(x))
+    # == (lambda x: np.poly1d(z)(x))
+    #return (lambda x: np.poly1d(z)), f
+    return (lambda x: np.where(x<=maxlength, np.poly1d(z)(x), np.poly1d(z)(maxlength))), f
+
+def estimator_benchmark(inter, estimator, f, maxlength, output=None):
+    """estimator: kde, f: polyfitted"""
+    x1 = np.linspace(1, maxlength, 500)
+    x2 = np.linspace(1, 20000, 200)
+    
+    plt.figure(figsize=(8, 8))
+    
+    plt.subplot(3, 1, 1)
+    _ = plt.hist(inter, bins=200)
+
+    plt.subplot(3, 1, 2)
+    plt.plot(x1, estimator(x1))
+    plt.plot(x1, f(x1))
+
+    plt.subplot(3, 1, 3)
+    plt.plot(x2, estimator(x2))
+    plt.plot(x2, f(x2))
+    
+    if output:
+        # save
+        plt.savefig(output)
+    else:
+        plt.show()
 
 def get_prob_mixed_numpy(contacts, size, near_estimator, distant_estimator):
     """近いところと遠いところで違う関数を使うやつ"""
@@ -114,12 +157,27 @@ def get_prob_mixed_numpy(contacts, size, near_estimator, distant_estimator):
                         prob[i*2+d1, j*2+d2] = p
     return prob
 
-def get_prob_pandas(df, size, lengths, estimator):
+def get_prob_pandas(df, lengths, estimator, ordering=None, remove_repetitive=False):
     """
     pandasを読み込むよ
     contactsよりもメモリ消費が少ないかも
     今の所一番いいやつ
     """
+    # マトリックスのサイズ
+    size = max(df['X1'].max(), df['X2'].max()) + 1
+    
+    if remove_repetitive:
+        print('removing repetitive hit')
+        df = df[(df['U1'] == True) & (df['U2'] == True)]
+    
+    # orderingの変換
+    # ordering[i]  = (i番目にいるcontigのid)
+    # order_map[i] = (contig id iの位置)
+    if ordering:
+        order_map = [-1 for _ in range(len(ordering))]
+        for x in range(len(ordering)):
+            order_map[ordering[x]] = x
+        
     # 値の切り替わりの位置を探す
     df.sort_values(by=['X1', 'X2'], inplace=True)
     x1, x2 = df['X1'].values, df['X2'].values
@@ -152,12 +210,17 @@ def get_prob_pandas(df, size, lengths, estimator):
         # 長さ
         L1 = lengths[i]
         L2 = lengths[j]
+        # 配置上の場所
+        #I = order_map[i]
+        #J = order_map[j]
         # gap: i+1,..j-1のlenの合計
-        gap = sum([lengths[k] for k in range(i+1, j)])
+        gap = sum([ lengths[k] for k in range(i+1, j) ])
+        #gap = sum([ lengths[ordering[k]] for k in range(min(I,J)+1, max(I,J)) ])
         for d1, d2 in [(0, 0), (0, 1), (1, 0), (1, 1)]:
             d = get_dists_numpy(P1, P2, d1, d2, L1, L2, gap)
             p = estimator(d).sum()
             prob[i*2+d1, j*2+d2] = p
+            prob[j*2+d2, i*2+d1] = p
     return prob
 
 def get_prob_numpy(contacts, size, estimator):
@@ -271,16 +334,20 @@ if __name__ == '__main__':
     args = psr.parse_args()
     
     if args.ref_r1 and args.ref_r2:
+        print('infer from reference contact')
         inter = get_intercontig_contacts(args.ref_r1, args.ref_r2)
         f, raw = get_kde_polyfit_estimator(inter, N=100000, bandwidth=200, maxlength=150000, points=500, degree=50)
         
     if args.pandas:
         import feather
         df = feather.read_dataframe(args.pandas)
-        size = max(df['X1'].max(), df['X2'].max()) + 1
+        
+        if not (args.ref_r1 and args.ref_r2):
+            print('infer from longest contig')
+            f = infer_from_longest_contig(df, args.sam, args.output+'.png')
+        
         sam = pysam.AlignmentFile(args.sam, 'r')
         lengths = sam.lengths
-        #print(lengths, size)
-        prob = get_prob_pandas(df, size, lengths, f)
+        prob = get_prob_pandas(df, lengths, f, remove_repetitive=True)
         np.save(args.output, prob)
         
