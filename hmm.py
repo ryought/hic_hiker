@@ -49,15 +49,24 @@ def get_emission_probability(i, j, prob, k=2):
         return -np.inf
     if j == 2**k:  # initial state will emit nothing
         return -np.inf
-    else:
+    if i == 1:
+        # 最初は全部を出力する必要がある
         p = 0
         layout = get_layout(k, j)
+        # {1,...,k}の全部列挙
         for x in range(k):
             for y in range(x+1, k):
-                # contig i-1+x, contig i-1+y 間の、
-                # それぞれ layout[x] layout[y] の向きとした時の確率を出す
-                # x < yになってる
-                p += prob[ (i-1+x)*2 + layout[x], (i-1+y)*2 + layout[y] ]
+                p += prob[ (x)*2 + layout[x], (y)*2 + layout[y] ]
+        return p
+    else:
+        # 2以上だったら、 (i-1, i+) ()
+        p = 0
+        layout = get_layout(k, j)
+        for x in range(k-1):
+            # 最初のcontigをlとすると l, ..., l+k-1
+            # 足し合わせたい組は(l, l+k-1), (l+1, l+k-1)...
+            # 時間iの時先頭のコンティグはid i-1
+            p += prob[ (i-1+x)*2 + layout[x], (i-1+k-1)*2 + layout[k-1] ]
         return p
     
 def show_benchmark(layout, pro, k, head=10):
@@ -65,15 +74,13 @@ def show_benchmark(layout, pro, k, head=10):
     #P = np.exp(pro)
     P = pro
     N = 0
-    #print(layout)
+    locus_prob = []
     for i in range(len(layout)-k):
         N += 1
-        if N == head:
-            #break
-            continue
+        
         if layout[i] == 0:
-            continue
-            #pass
+            #continue
+            pass
         
         # layout 表示部分
         U = P[i+1][0:2**(k-1)]
@@ -81,18 +88,14 @@ def show_benchmark(layout, pro, k, head=10):
         sU = log_sum(U)
         sD = log_sum(D)
         sUD = log_add(sU, sD)
-        print('\x1b[31m', i, layout[i], '\x1b[0m', np.exp(sU-sUD), np.exp(sD-sUD))
         
-        if False:
-            for j in range(len(P[i])):
-                if j == np.argmax(P[i]):
-                    print('\x1b[31m{:.7e}\x1b[0m'.format(P[i][j]), end=' ')
-                else:
-                    print('{:.7e}'.format(P[i][j]), end=' ')
+        locus_prob.append((i, layout[i], np.exp(sU-sUD), np.exp(sD-sUD)))
         
-        #print(P[i+1])
+        if N < head:
+            print('\x1b[31m', i, layout[i], '\x1b[0m', np.exp(sU-sUD), np.exp(sD-sUD))
         
     for step in range(k, 0, -1):
+        N += 1
         i = len(layout)-step
         LP = P[len(layout)-k+1]
         # step-1個右にシフトして、1とandとった奴が0の時上、1の時下 (最下位ビットが0ならU)
@@ -106,9 +109,11 @@ def show_benchmark(layout, pro, k, head=10):
         sU = log_sum(U)
         sD = log_sum(D)
         sUD = log_add(sU, sD)
-        print('\x1b[31m', i, layout[i], '\x1b[0m', np.exp(sU-sUD), np.exp(sD-sUD))
+        locus_prob.append((i, layout[i], np.exp(sU-sUD), np.exp(sD-sUD)))
+        if N < head:
+            print('\x1b[31m', i, layout[i], '\x1b[0m', np.exp(sU-sUD), np.exp(sD-sUD))
             
-        #print(P[len(layout)-k+1], len(layout)-k+1)
+    return locus_prob
 
 def run_hmm(prob, k=4, n=5000, debug=False, short=False):
     """
@@ -219,9 +224,9 @@ def run_hmm(prob, k=4, n=5000, debug=False, short=False):
     P = F+B  # P[t][j] = 時刻tにjのステートにいる確率
     
     if debug:
-        print(np.exp(state))
-        print(np.exp(F))
-        print(np.exp(B))
+        print('state', np.exp(state))
+        print('for', np.exp(F))
+        print('back', np.exp(B))
         print(np.exp(A))
         print(np.exp(P))
     

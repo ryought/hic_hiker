@@ -1,6 +1,7 @@
 # filename='../../analysis/3D_DNA/answer70gap/vc2010_25000.final.assembly'
 # filename='../../analysis/3D_DNA/mock/mock.final.assembly'
-filename='../../analysis/3D_DNA/mock_chrI/mock_chrI.final.assembly'
+# filename='../../analysis/3D_DNA/mock_chrI/mock_chrI.final.assembly'
+filename='../../analysis/3D_DNA/mock_chrII/mock_chrII.0.assembly'
 print(filename)
 C = 0
 T = 0
