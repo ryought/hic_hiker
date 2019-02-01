@@ -1,7 +1,2 @@
-from .hic_contact import HiCContact
-from .matrix import *
-from .prob import *
-from .hmm import *
-from .load import *
-from .load_3ddna import *
-from .save import *
+from . import hmm, hic_contact, matrix, prob, load, load_3ddna, save
+from .tools.mummer_interactive_dotplot import parse_multi_mums, draw_map_plotly_multi, parse_mums, draw_map_plotly

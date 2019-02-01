@@ -118,15 +118,29 @@ def estimator_benchmark(inter, estimator, f, maxlength, output=None):
     plt.figure(figsize=(8, 8))
     
     plt.subplot(3, 1, 1)
+    plt.xlabel('basepair distance between Hi-C contact')
+    plt.ylabel('frequency')
     _ = plt.hist(inter, bins=200)
 
     plt.subplot(3, 1, 2)
-    plt.plot(x1, estimator(x1))
-    plt.plot(x1, f(x1))
+    plt.xlabel('basepair distance between Hi-C contact')
+    plt.ylabel('log probability')
+    #plt.xscale('log')
+    plt.plot(x1, estimator(x1), label='KDE estimation')
+    plt.plot(x1, f(x1), label='polynomial fit')
+    plt.legend()
+    plt.axvspan(1, 20000, facecolor='g', alpha=0.2)
 
     plt.subplot(3, 1, 3)
+    plt.xlabel('basepair distance between Hi-C contact')
+    plt.ylabel('log probability')
     plt.plot(x2, estimator(x2))
     plt.plot(x2, f(x2))
+    plt.legend()
+    plt.axvspan(1, 20000, facecolor='g', alpha=0.2)
+    
+    # いい感じに調整
+    plt.tight_layout()
     
     if output:
         # save
