@@ -7,7 +7,7 @@ import argparse
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
 
-def supercontig_from_layout(layout, order, fasta_filename, sam_filename, out_filename=None):
+def supercontig_from_layout(layout, order, fasta_filename, sam_filename, contig_name, out_filename=None):
     sam = pysam.AlignmentFile(sam_filename, 'r')
     contigs = {}
     for record in SeqIO.parse(fasta_filename, 'fasta'):
@@ -36,6 +36,6 @@ def supercontig_from_layout(layout, order, fasta_filename, sam_filename, out_fil
         return supercontig
     else:
         # fastaで保存する
-        supercontig_rec = SeqRecord(supercontig, 'supercontig', '', '')
+        supercontig_rec = SeqRecord(supercontig, contig_name, '', '')
         SeqIO.write([supercontig_rec], out_filename, 'fasta')
         print('saved')

@@ -229,6 +229,12 @@ def get_prob_pandas(df, lengths, estimator, ordering=None, remove_repetitive=Fal
             I = order_map[i]
             J = order_map[j]
             gap = sum([ lengths[ordering[k]] for k in range(min(I,J)+1, max(I,J)) ])
+            
+            if I > J:
+                # I < Jに直す
+                J, I = I, J
+                L1, L2 = L2, L1
+                P1, P2 = P2, P1
         else:
             # gap: i+1,..j-1のlenの合計
             gap = sum([ lengths[k] for k in range(i+1, j) ])
