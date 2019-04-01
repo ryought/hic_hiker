@@ -1,4 +1,4 @@
-# hic-hiker
+# hic_hiker
 orientation
 
 ## modules

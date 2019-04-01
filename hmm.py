@@ -115,6 +115,127 @@ def show_benchmark(layout, pro, k, head=10):
             
     return locus_prob
 
+def get_ranges(lengths, K=20):
+    """
+    adaptiveなやつ用
+    K: [(2, 2), (3, 2), (4, 1), (5, 1)]  各状態の開始index(0-origin)と、その隣を何個考えるか
+    """
+    k = []
+    for i in range(1, len(lengths)):
+        # iで終わる区間について
+        #print(i)
+        #print(lengths[:i])
+        lst = np.cumsum(list(reversed(lengths[:i])))
+        #print(lst)
+        idxs = np.arange(i)[lst > K]
+        #print(idxs)
+        if len(idxs) == 0:
+            continue
+        else:
+            k.append((i, idxs[0]+1))
+    k[0] = (k[0][0], k[0][0])
+    return k
+
+def emission_prob_test(i, j): # iとi-1, i-2, ..., i-kの接触
+    # k[i] に入っているコンティグの間の接触
+    # 向きの情報はjに従う
+    #return np.log(0.5)
+    P = [
+        [0.04, 0.02, 0.8, 0.01, 0.01, 0.01, 0.01, 0.1], # 8
+        [0.01, 0.01, 0.01, 0.01, 0.93, 0.01, 0.01, 0.01], # 8
+        [0.1, 0.7, 0.1, 0.1], # 4
+        [0.1, 0.1, 0.1, 0.7] 
+    ]
+    return np.log(P[i][j])
+
+def emission_prob(i, j, prob, k_list):
+    if i == 0:
+        # 最初は全部を出力する必要がある
+        p = 0
+        k = k_list[i][1]+1
+        layout = get_layout(k, j)
+        # {1,...,k}の全部列挙
+        for x in range(k):
+            for y in range(x+1, k):
+                #print('contact', x, y, layout[x], layout[y])
+                p += prob[ (x)*2 + layout[x], (y)*2 + layout[y] ]
+        return p
+    else:
+        p = 0
+        k = k_list[i][1]+1
+        layout = get_layout(k, j)
+        end = k_list[i][0]
+        for x in range(1, k):
+            #print('contact', (end-x), (end),layout[k-1-x], layout[k-1])
+            p += prob[ (end-x)*2 + layout[k-1-x], (end)*2 + layout[k-1] ]
+        return p
+
+def transition_prob(i, j, kj):
+    # t-1のステートiから、tのステートj(kj個を同時に考えている、つまりステート数は2**kj個)
+    # jの1つシフトしたもの(kn-1桁ある) == iの下位kn-1桁
+    # なら良い
+    #print(bin(j>>1), bin(i), bin(2**(kj-1) -1), bin(i & (2**kj - 1)))
+    if (j >> 1) == (i & (2**(kj-1) - 1)):
+        return -np.log(2)
+    else:
+        return -np.inf
+    
+def run_hmm_adaptive_all(prob, K, n, lengths):
+    k_list = get_ranges(lengths, K)
+    return run_hmm_adaptive(prob, k_list)
+    
+def run_hmm_adaptive(prob, k):
+    """
+    prob:
+    -> k: 各状態
+    """
+    #print(k)
+    states = [np.zeros(2**(k[i][1]+1)) for i in range(len(k))]  # states[i][j]  i番目のステートでの向きjのvterbi確率を表す
+    origin = [[-1 for _ in range(2**(k[i][1]+1))] for i in range(len(k))]  # origin[i][j]  state[i][j]はどこからきたか？
+    Lstates = [k[i][1]+1 for i in range(len(k))]
+    print(Lstates)
+    
+    # 初期化
+    # 最初は確率1のinitial stateから、等確率で分配される
+    p0 = - np.log(len(states[0]))
+    print(np.exp(p0), p0)
+    for j in range(len(states[0])):
+        states[0][j] = p0 + emission_prob(0, j, prob, k)
+    print('init', np.exp(states[0]))
+    from tqdm import tqdm_notebook as tqdm
+    for i in tqdm(range(1, len(states))):
+        # time iに移行
+        p = np.zeros(len(states[i-1]))
+        for j in range(len(states[i])):
+            #print(i, j)
+            # t=iの時に state jになる確率を計算
+            # その状態に入る最高値を求める
+            for h in range(len(states[i-1])):
+                # t=i-1の時のhのステートから、t=iの時のjのステートにくる確率
+                # transition probability
+                p[h] = states[i-1][h] + transition_prob(h, j, Lstates[i])
+            Mp, Mpi = np.max(p), np.argmax(p)
+            states[i][j] = Mp + emission_prob(i, j, prob, k)
+            origin[i][j] = Mpi
+    #print(states, origin)
+    #print(states)
+    path = [ np.argmax(states[-1]) ]
+    for i in range(len(origin)-1, 0, -1):
+        path.insert(0, origin[i][ path[0] ])
+    print(path)
+    
+    # stateをほぐして、各contigの向きを出力
+    # orientation
+    orientation = [-1 for _ in range(k[-1][0] + 1)]  # contig数個の長さがあるはず
+    for i in reversed(range(len(k))):
+        # path[i]の一番右の桁を取ってくる (& 1 する)
+        orientation[k[i][0]] = path[i] & 1
+    for i in range(k[0][1]):
+        # path[0]にはk[0][1]個分の情報が入っているので、全部の桁を取ってくる
+        orientation[i] = path[0] & (2**(k[0][1] - i))
+    
+    return orientation, None, states, path, origin
+
 def run_hmm(prob, k=4, n=5000, debug=False, short=False):
     """
     k: number of contig in one state
@@ -172,13 +293,13 @@ def run_hmm(prob, k=4, n=5000, debug=False, short=False):
     for i in range(1, L):
         orientation.append(path[i] >> (k-1))  # 2進数にした時の一番左の位が一番若いstate
     for j in range(k-2, -1, -1): # 最後のステートにしかない情報は別に取り出す
-        print(j)
+        #print(j)
         orientation.append(path[i] >> (k-1) & 1)
-    print(k, n, sum(orientation))
+    #print(k, n, sum(orientation))
     
     if short:
         # 各状態の計算はせずに、向きだけ必要な時
-        return orientation, None, state
+        return orientation, None, state, path
     
     
     # 各状態での確率の算出
@@ -230,7 +351,7 @@ def run_hmm(prob, k=4, n=5000, debug=False, short=False):
         print(np.exp(A))
         print(np.exp(P))
     
-    return orientation, P, state
+    return orientation, P, state, path
 
 def log_sum(L):
     S = L[0]

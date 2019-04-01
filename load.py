@@ -18,6 +18,45 @@ import pandas as pd
 """
 samをパースしてcontactsにするやつ
 """
+def get_contacts_mnd_df(samfile, mndfile):
+    """merged no dups txt(juicerの出力)を読み込んで, dfにする"""
+    sam_r1 = pysam.AlignmentFile(samfile, 'r')
+    size = sam_r1.nreferences
+    R, X1, X2, P1, P2, U1, U2 = [], [], [], [], [], [], []
+    import csv
+    N = 0
+    with open(mndfile, 'r') as f:
+        reader = csv.reader(f, delimiter=' ')
+        for row in tqdm(reader):
+            # merged.append((sam_r1.get_tid(row[1]), row[2], sam_r1.get_tid(row[5]), row[6]))
+            # R.append(row[14])
+            R.append('')  # TODO feather column size limit(2GB), we won't use read name for a while, so disabled
+            x1, x2 = sam_r1.get_tid(row[1]), sam_r1.get_tid(row[5])  # id
+            p1, p2 = int(row[2])-1, int(row[6])-1  # TODO convert to int, 0-origin or 1-origin?
+            # i,j は i<jを満たすように入れたい
+            if x1 <= x2:
+                X1.append(x1)
+                X2.append(x2)
+                P1.append(p1)
+                P2.append(p2)
+                U1.append(True)
+                U2.append(True)
+            elif x1 > x2:
+                X1.append(x2)
+                X2.append(x1)
+                P1.append(p2)
+                P2.append(p1)
+                U1.append(True)  # unique mapping
+                U2.append(True)
+            N += 1
+    print('processed', N, 'lines')
+    df = pd.DataFrame(
+        data={'R':R, \
+              'X1':X1,'X2':X2, \
+              'P1':P1,'P2':P2, \
+              'U1':U1,'U2':U2}
+    )
+    return df, size
 
 def get_contacts_df(r1_samfile, r2_samfile):
     sam_r1 = pysam.AlignmentFile(r1_samfile, 'r')
@@ -190,21 +229,27 @@ def get_internal_contacts(r1samfile, r2samfile):
 
 if __name__ == '__main__':
     psr = argparse.ArgumentParser()
-    psr.add_argument('sam_r1', help='sam file of r1.fastq')
-    psr.add_argument('sam_r2', help='sam file of r2.fastq')
+    psr.add_argument('--sam_r1', help='sam file of r1.fastq')
+    psr.add_argument('--sam_r2', help='sam file of r2.fastq')
     psr.add_argument('--fasta', help='contig fasta file')
     psr.add_argument('output_filename', help='output pickle filename')
     psr.add_argument('--single', help='input samfile contains only one hit for one read.', action='store_true')
     psr.add_argument('--pandas', help='output as pandas', action='store_true')
+    psr.add_argument('--mnd', help='parse merged_nodups.txt')
     psr.add_argument('--hickle', help='store in hickle hdf5.gz format', action='store_true')
     args = psr.parse_args()
-    
+
     if args.pandas:
-        print('pandas and dump as feather')
-        df, size = get_contacts_df(args.sam_r1, args.sam_r2)
-        print('size', size)
-        df.to_feather(args.output_filename)
-        
+        if args.sam_r1 and args.sam_r2:
+            print('pandas and dump as feather')
+            df, size = get_contacts_df(args.sam_r1, args.sam_r2)
+            print('size', size)
+            df.to_feather(args.output_filename)
+        elif args.sam_r1 and args.mnd:
+            print('import mnd and dump DataFrame as feather')
+            df, size = get_contacts_mnd_df(args.sam_r1, args.mnd)
+            print('size', size)
+            df.to_feather(args.output_filename)
     else:
         if args.single:
             contacts = get_contacts_direct(args.sam_r1, args.sam_r2)

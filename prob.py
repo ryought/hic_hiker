@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.neighbors.kde import KernelDensity
 from tqdm import tqdm_notebook as tqdm
+#from tqdm import tqdm as tqdm
 import pysam
 import argparse
 
@@ -30,10 +31,10 @@ def infer_from_longest_contig(df, sam_filename, output_filename, remove_repetiti
     print('# of contacts:', len(inter))
     
     f, raw = get_kde_polyfit_estimator(inter, \
-                                       N=100000, bandwidth=200, \
+                                       N=30000, bandwidth=200, \
                                        maxlength=maxlength, \
                                        points=500, degree=50)
-    estimator_benchmark(inter, raw, f, maxlength=maxlength+50000)
+    estimator_benchmark(inter, raw, f, maxlength=maxlength+50000, output=output_filename)
     return f
 
 
@@ -171,7 +172,7 @@ def get_prob_mixed_numpy(contacts, size, near_estimator, distant_estimator):
                         prob[i*2+d1, j*2+d2] = p
     return prob
 
-def get_prob_pandas(df, lengths, estimator, ordering=None, remove_repetitive=False):
+def get_prob_pandas(df, lengths, estimator, ordering=None, remove_repetitive=False, max_k=None):
     """
     pandasを読み込むよ
     contactsよりもメモリ消費が少ないかも
@@ -218,6 +219,14 @@ def get_prob_pandas(df, lengths, estimator, ordering=None, remove_repetitive=Fal
             _, _, end = start_pos[k+1]
         if i == j:
             continue
+        # limit k
+        if max_k:
+            if ordering:
+                if abs(order_map[i]-order_map[j]) > max_k:
+                    continue
+            else:
+                if abs(i-j) > max_k:
+                    continue
         C = df[start:end]
         P1 = C['P1'].values
         P2 = C['P2'].values
@@ -357,6 +366,7 @@ if __name__ == '__main__':
     psr.add_argument('--ref_r1', help='reference')
     psr.add_argument('--ref_r2', help='reference')
     psr.add_argument('--sam', help='contig sams for lengths')
+    psr.add_argument('--max_length', type=int, help='max length')
     psr.add_argument('output', help='output npy filename')
     args = psr.parse_args()
     
@@ -371,7 +381,7 @@ if __name__ == '__main__':
         
         if not (args.ref_r1 and args.ref_r2):
             print('infer from longest contig')
-            f = infer_from_longest_contig(df, args.sam, args.output+'.png')
+            f = infer_from_longest_contig(df, args.sam, args.output+'.png', maxlength=args.max_length, remove_repetitive=True)
         
         sam = pysam.AlignmentFile(args.sam, 'r')
         lengths = sam.lengths
