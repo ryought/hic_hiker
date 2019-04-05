@@ -1,39 +1,29 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.neighbors.kde import KernelDensity
 
 from tqdm import tqdm as tqdm
-
-import os
-import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '.'))
-
-from hic_contact import HiCContact
-import pysam
 import argparse
-import pickle
 
 import pandas as pd
+import csv
+import pysam
 
 """
-samをパースしてcontactsにするやつ
+Get contacts from mnd(merged nodups txt) or sam(sam r1 and sam r2).
+result is composed of DataFrame, pandas.
 """
-def get_contacts_mnd_df(samfile, mndfile):
-    """merged no dups txt(juicerの出力)を読み込んで, dfにする"""
-    sam_r1 = pysam.AlignmentFile(samfile, 'r')
-    size = sam_r1.nreferences
-    R, X1, X2, P1, P2, U1, U2 = [], [], [], [], [], [], []
-    import csv
+
+def get_contacts_mnd(contigs, mnd_filename):
+    """get Hi-C contacts from mnd, or merged_nodups.txt, output of juicer(Aiden lab)"""
+    X1, X2, P1, P2, U1, U2 = [], [], [], [], [], []
     N = 0
-    with open(mndfile, 'r') as f:
+    with open(mnd_filename, 'r') as f:
         reader = csv.reader(f, delimiter=' ')
         for row in tqdm(reader):
-            # merged.append((sam_r1.get_tid(row[1]), row[2], sam_r1.get_tid(row[5]), row[6]))
-            # R.append(row[14])
-            R.append('')  # TODO feather column size limit(2GB), we won't use read name for a while, so disabled
-            x1, x2 = sam_r1.get_tid(row[1]), sam_r1.get_tid(row[5])  # id
-            p1, p2 = int(row[2])-1, int(row[6])-1  # TODO convert to int, 0-origin or 1-origin?
-            # i,j は i<jを満たすように入れたい
+            # x1, x2: contig id
+            x1, x2 = contigs.get_id(row[1]), contigs.get_id(row[5])
+            # p1, p2: mapping position. position in mnd(and samfile) is 1-origin, but df uses 0-origin.
+            p1, p2 = int(row[2])-1, int(row[6])-1
+            # row X1 and X2 must satisfy X1 <= X2
             if x1 <= x2:
                 X1.append(x1)
                 X2.append(x2)
@@ -46,21 +36,21 @@ def get_contacts_mnd_df(samfile, mndfile):
                 X2.append(x1)
                 P1.append(p2)
                 P2.append(p1)
-                U1.append(True)  # unique mapping
+                U1.append(True)
                 U2.append(True)
             N += 1
     print('processed', N, 'lines')
     df = pd.DataFrame(
-        data={'R':R, \
-              'X1':X1,'X2':X2, \
-              'P1':P1,'P2':P2, \
-              'U1':U1,'U2':U2}
+        data={ 'X1':X1,'X2':X2, \
+               'P1':P1,'P2':P2, \
+               'U1':U1,'U2':U2 }
     )
-    return df, size
+    return df
 
-def get_contacts_df(r1_samfile, r2_samfile):
-    sam_r1 = pysam.AlignmentFile(r1_samfile, 'r')
-    sam_r2 = pysam.AlignmentFile(r2_samfile, 'r')
+def get_contacts_sam(contigs, sam_r1_filename, sam_r2_filename):
+    """get Hi-C contacts from sam, which you can get by running 'bwa-mem' on contig fasta and Hi-C fastq."""
+    sam_r1 = pysam.AlignmentFile(sam_r1_filename, 'r')
+    sam_r2 = pysam.AlignmentFile(sam_r2_filename, 'r')
     size = sam_r1.nreferences
     R, X1, X2, P1, P2, U1, U2 = [], [], [], [], [], [], []
     N = 0
@@ -73,15 +63,15 @@ def get_contacts_df(r1_samfile, r2_samfile):
             r2 = next(sam_r2)
             if R and R[-1] == r2.query_name:
                 U2[-1] = False
-        if r1.query_name != r2.query_name:
+        if r1.query_name != r2.query_name:  # TODO マップされてない時を考えてない？
+            # ordering of samfile is corrupted.
             print('assertion failed')
             print(r1.query_name, r2.query_name)
             break
         if (not r1.is_unmapped) and (not r2.is_unmapped):
             R.append(r1.query_name)
-            x1, x2 = r1.reference_id, r2.reference_id
+            x1, x2 = contigs.get_id(r1.reference_name), contigs.get_id(r2.reference_name)
             p1, p2 = r1.reference_start, r2.reference_start
-            # i,j は i<jを満たすように入れたい
             if x1 <= x2:
                 X1.append(x1)
                 X2.append(x2)
@@ -97,176 +87,45 @@ def get_contacts_df(r1_samfile, r2_samfile):
                 U1.append(True)  # unique mapping
                 U2.append(True)
         N += 1
-    print(N)
+    print(N, 'lines')
     df = pd.DataFrame(
         data={'R':R, \
               'X1':X1,'X2':X2, \
               'P1':P1,'P2':P2, \
               'U1':U1,'U2':U2}
     )
-    return df, size
+    return df
 
-def get_contacts_direct(r1_samfile, r2_samfile):
-    """
-    only for single hit file. please run bwa mem without -a option
-    メモリ消費がやばげ(127GBほど)
-    時間は
-    """
-    sam_r1 = pysam.AlignmentFile(r1_samfile, 'r')
-    sam_r2 = pysam.AlignmentFile(r2_samfile, 'r')
-    size = sam_r1.nreferences
-    contacts = [[[] for y in range(size)] for x in range(size)]
-    N = 0
-    for r1, r2 in tqdm(zip(sam_r1, sam_r2)):
-        # 
-        while r1.is_secondary or r1.is_supplementary:
-            r1 = next(sam_r1)
-        while r2.is_secondary or r2.is_supplementary:
-            r2 = next(sam_r2)
-        if r1.query_name != r2.query_name:
-            print('assertion failed')
-            print(r1.query_name, r2.query_name)
-            break
-        if (not r1.is_unmapped) and (not r2.is_unmapped):
-            x1, x2 = r1.reference_id, r2.reference_id
-            p1, p2 = r1.reference_start, r2.reference_start
-            # i,j は i<jを満たすように入れたい
-            if x1 < x2:
-                contacts[x1][x2].append((p1, p2))
-            elif x1 > x2:
-                contacts[x2][x1].append((p2, p1))  
-        N += 1
-    print(N)
+def test():
+    from contigs import Contigs
+    contigs = Contigs('test/small_mock/contigs.fasta')
+    df = get_contacts_mnd(contigs, 'test/small_mock/mnd.txt')
+    print(df)
 
-    print('convert to numpy')
-    for i in tqdm(range(size)):
-        for j in range(i+1, size):
-            contacts[i][j] = (np.array([x[0] for x in contacts[i][j]], dtype=np.uint16),
-                              np.array([x[1] for x in contacts[i][j]], dtype=np.uint16))
-    
-    return contacts
-
-def get_contacts_direct(r1_samfile, r2_samfile):
-    """only for single hit file. please run bwa mem without -a option"""
-    sam_r1 = pysam.AlignmentFile(r1_samfile, 'r')
-    sam_r2 = pysam.AlignmentFile(r2_samfile, 'r')
-    size = sam_r1.nreferences
-    contacts = [[[] for y in range(size)] for x in range(size)]
-    N = 0
-    for r1, r2 in tqdm(zip(sam_r1, sam_r2)):
-        # 
-        while r1.is_secondary or r1.is_supplementary:
-            r1 = next(sam_r1)
-        while r2.is_secondary or r2.is_supplementary:
-            r2 = next(sam_r2)
-        if r1.query_name != r2.query_name:
-            print('assertion failed')
-            print(r1.query_name, r2.query_name)
-            break
-        if (not r1.is_unmapped) and (not r2.is_unmapped):
-            x1, x2 = r1.reference_id, r2.reference_id
-            p1, p2 = r1.reference_start, r2.reference_start
-            # i,j は i<jを満たすように入れたい
-            if x1 < x2:
-                contacts[x1][x2].append((p1, p2))
-            elif x1 > x2:
-                contacts[x2][x1].append((p2, p1))  
-        N += 1
-    print(N)
-
-    print('convert to numpy')
-    for i in tqdm(range(size)):
-        for j in range(i+1, size):
-            contacts[i][j] = (np.array([x[0] for x in contacts[i][j]], dtype=np.uint16),
-                              np.array([x[1] for x in contacts[i][j]], dtype=np.uint16))
-    
-    return contacts
-
-# main function
-def get_contacts(ans):
-    """
-    @params ans: <class HiCContact>
-    """
-    contacts = [[[] for y in range(ans.size)] for x in range(ans.size)]
-    for readname, c in ans.r.items():
-        if len(c['r1']) == 1 and len(c['r2']) == 1:
-            i = c['r1'][0][0]
-            j = c['r2'][0][0]
-            if i < j:
-                contacts[i][j].append((c['r1'][0][1], c['r2'][0][1]))
-            elif i > j:
-                contacts[j][i].append((c['r2'][0][1], c['r1'][0][1]))
-    return contacts
-
-def get_contacts_numpy(ans, contacts):
-    """
-    @params ans: <class HiCContact>
-    """
-    contacts_alt = [[None for y in range(ans.size)] for x in range(ans.size)]
-    for i in range(ans.size):
-        for j in range(i+1, ans.size):
-            contacts_alt[i][j] = (np.array([x[0] for x in contacts[i][j]]), \
-                                  np.array([x[1] for x in contacts[i][j]]))
-    return contacts_alt
-
-def get_internal_contacts(r1samfile, r2samfile):
-    sam_r1 = pysam.AlignmentFile(r1samfile, 'r')
-    sam_r2 = pysam.AlignmentFile(r2samfile, 'r')
-    r = {}
-    for read in sam_r1:
-        if not read.is_unmapped:
-            if read.query_name not in r:
-                r[read.query_name] = {'r1':[], 'r2':[]}
-            r[read.query_name]['r1'].append((read.reference_id, read.reference_start, read.is_reverse))
-    for read in sam_r2:
-        if not read.is_unmapped:
-            if read.query_name in r:
-                r[read.query_name]['r2'].append((read.reference_id, read.reference_start, read.is_reverse))
-    inter = [ abs(c['r1'][0][1] - c['r2'][0][1]) for key, c in r.items() \
-             if len(c['r1'])==1 and len(c['r2'])==1 \
-             and c['r1'][0][0] == c['r2'][0][0]]
-    return inter
-
-if __name__ == '__main__':
+def main():
     psr = argparse.ArgumentParser()
-    psr.add_argument('--sam_r1', help='sam file of r1.fastq')
-    psr.add_argument('--sam_r2', help='sam file of r2.fastq')
-    psr.add_argument('--fasta', help='contig fasta file')
-    psr.add_argument('output_filename', help='output pickle filename')
-    psr.add_argument('--single', help='input samfile contains only one hit for one read.', action='store_true')
-    psr.add_argument('--pandas', help='output as pandas', action='store_true')
-    psr.add_argument('--mnd', help='parse merged_nodups.txt')
-    psr.add_argument('--hickle', help='store in hickle hdf5.gz format', action='store_true')
+    psr.add_argument('--sam_r1', help='r1 samfile')
+    psr.add_argument('--sam_r2', help='r2 samfile')
+    psr.add_argument('--mnd', help='merged_nodups.txt from Juicer')
+    psr.add_argument('fasta', help='contig fasta filename')
+    psr.add_argument('output', help='output DataFrame(.feather) filename')
     args = psr.parse_args()
 
-    if args.pandas:
-        if args.sam_r1 and args.sam_r2:
-            print('pandas and dump as feather')
-            df, size = get_contacts_df(args.sam_r1, args.sam_r2)
-            print('size', size)
-            df.to_feather(args.output_filename)
-        elif args.sam_r1 and args.mnd:
-            print('import mnd and dump DataFrame as feather')
-            df, size = get_contacts_mnd_df(args.sam_r1, args.mnd)
-            print('size', size)
-            df.to_feather(args.output_filename)
-    else:
-        if args.single:
-            contacts = get_contacts_direct(args.sam_r1, args.sam_r2)
-        else:
-            print('parsing')
-            from hic_contact import HiCContact
-            ans = HiCContact(args.sam_r1, args.sam_r2, args.fasta)
-            ans.prepare_fasta()
-            ans.build()
-            contacts = get_contacts_numpy(ans, get_contacts(ans))
+    print('parsing fasta')
+    from contigs import Contigs
+    contigs = Contigs(args.fasta)
 
-        # dump it
-        if args.hickle:
-            print('dumping using hickle')
-            import hickle as hkl
-            hkl.dump(contacts, args.output_filename, mode='w', compression='gzip')
-        else:
-            print('dumping')
-            with open(args.output_filename, mode='wb') as f:
-                pickle.dump(contacts, f, protocol=4)
+    if args.sam_r1 and args.sam_r2:
+        print('parsing samfile')
+        df = get_contacts_sam(contigs, args.sam_r1, args.sam_r2)
+        df.to_feather(args.output)
+    elif args.mnd:
+        print('parsing merged nodup txt')
+        df = get_contacts_mnd(contigs, args.mnd)
+        df.to_feather(args.output)
+    else:
+        print('Error: input files are not specified. Exit.')
+
+if __name__ == '__main__':
+    # main()
+    test()

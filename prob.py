@@ -5,92 +5,35 @@ from tqdm import tqdm_notebook as tqdm
 #from tqdm import tqdm as tqdm
 import pysam
 import argparse
+import pandas as pd
 
 """
 確率を求める関係のやつ
+
+df, contigs
+
+
 """
 
-def infer_from_longest_contig(df, sam_filename, output_filename, remove_repetitive=False, maxlength=150000):
+def infer_from_longest_contig(df, contigs, remove_repetitive=False, max_length=150000, image_filename=None):
     """
-    実データで使う用
-    一番長いコンティグ(or thresholdを設ける)のgapを使う
-    ヒストグラム、fitted polylineを描画する機能をつける
-    個数が不足していたら伸ばすなど
+    最長のcontigから推定器を作る
     """
-    sam = pysam.AlignmentFile(sam_filename, 'r')
-    lengths = np.array(sam.lengths)
+    lengths = np.array(contigs.lengths)
     max_contig_id = np.argmax(lengths)
-    print('use longest contig', max_contig_id, lengths[max_contig_id], sam.get_reference_name(max_contig_id))
-    #size = sam_r1.nreferences
+    print('use longest contig', max_contig_id, lengths[max_contig_id], contigs.get_name(max_contig_id))
     if remove_repetitive:
-        C = df[(df['X1']==max_contig_id) & (df['X2']==max_contig_id) \
-               & (df['U1']==True) & (df['U2']==True)]
+        C = df[(df['X1']==max_contig_id) & (df['X2']==max_contig_id) & (df['U1']==True) & (df['U2']==True)]
     else:
         C = df[(df['X1']==max_contig_id) & (df['X2']==max_contig_id)]
     inter = np.abs(C['P1'].values - C['P2'].values)
     print('# of contacts:', len(inter))
-    
     f, raw = get_kde_polyfit_estimator(inter, \
                                        N=30000, bandwidth=200, \
                                        maxlength=maxlength, \
                                        points=500, degree=50)
-    estimator_benchmark(inter, raw, f, maxlength=maxlength+50000, output=output_filename)
+    estimator_benchmark(inter, raw, f, maxlength=maxlength+50000, output=image_filename)
     return f
-
-
-def get_intercontig_contacts_fast(samr1_filename, samr2_filename):
-    """
-    multiple hitを除いてないからどうなることやらバージョン
-    """
-    sam_r1 = pysam.AlignmentFile(samr1_filename, 'r')
-    sam_r2 = pysam.AlignmentFile(samr2_filename, 'r')
-    size = sam_r1.nreferences
-    inter = []
-    N = 0
-    for r1, r2 in tqdm(zip(sam_r1, sam_r2)):
-        # 同時に読み込む
-        while r1.is_secondary or r1.is_supplementary:
-            r1 = next(sam_r1)
-        while r2.is_secondary or r2.is_supplementary:
-            r2 = next(sam_r2)
-        if r1.query_name != r2.query_name:
-            print('assertion failed')
-            print(r1.query_name, r2.query_name)
-            break
-
-        if (not r1.is_unmapped) and (not r2.is_unmapped):
-            if r1.reference_id == r2.reference_id:
-                p1, p2 = r1.reference_start, r2.reference_start
-                inter.append(abs(p1-p2))
-                N += 1
-    print(N)
-    return np.array(inter)
-
-def get_intercontig_contacts(samr1_filename, samr2_filename):
-    sam_ref_r1 = pysam.AlignmentFile(samr1_filename, 'r')
-    sam_ref_r2 = pysam.AlignmentFile(samr2_filename, 'r')
-    r = {}
-    for read in sam_ref_r1:
-        if not read.is_unmapped:
-            if read.query_name not in r:
-                r[read.query_name] = {'r1':[], 'r2':[]}
-            r[read.query_name]['r1'].append((read.reference_id, read.reference_start, read.is_reverse))
-    for read in sam_ref_r2:
-        if not read.is_unmapped:
-            if read.query_name in r:
-                r[read.query_name]['r2'].append((read.reference_id, read.reference_start, read.is_reverse))
-    # get interchromosomal contact
-    inter = [ abs(c['r1'][0][1] - c['r2'][0][1]) for key, c in r.items() \
-             if len(c['r1'])==1 and len(c['r2'])==1 and c['r1'][0][0] == c['r2'][0][0]]
-    return np.array(inter)
-
-def get_swapped_prob(prob, indexes=None):
-    new_prob = prob.copy()
-    if indexes:
-        for i in indexes:
-            new_prob[[2*i, 2*i+1]] = new_prob[[2*i+1, 2*i]]
-            new_prob[:, [2*i, 2*i+1]] = new_prob[:, [2*i+1, 2*i]]
-    return new_prob
 
 def get_kde_estimator(samples, N=10000, bandwidth=200, debug=False):
     """sample(サンプル点のリスト)をKDEでノンパラメトリックにフィッティングして、その識別器を返す"""
@@ -149,28 +92,52 @@ def estimator_benchmark(inter, estimator, f, maxlength, output=None):
     else:
         plt.show()
 
-def get_prob_mixed_numpy(contacts, size, near_estimator, distant_estimator):
-    """近いところと遠いところで違う関数を使うやつ"""
-    prob = np.zeros((size*2, size*2))
-    for d1, d2 in [(0, 0), (0, 1), (1, 0), (1, 1)]:
-        print(d1, d2)
-        for i in tqdm(range(size)):
-            for j in range(i+1, size):
-                if j - i == 1:
-                    gap = 0
-                    c = contacts[i][j]
-                    d = get_dists_numpy(c[0], c[1], d1, d2, 20000, 20000, gap)
-                    if len(d) > 0:
-                        p = near_estimator(d).sum()
-                        prob[i*2+d1, j*2+d2] = p
-                else:
-                    gap = 20000*(j-i-1)
-                    c = contacts[i][j]
-                    d = get_dists_numpy(c[0], c[1], d1, d2, 20000, 20000, gap)
-                    if len(d) > 0:
-                        p = distant_estimator(d).sum()
-                        prob[i*2+d1, j*2+d2] = p
-    return prob
+from layout import Layout
+from contigs import Contigs
+def get_prob(df, contigs: Contigs, layout: Layout, estimator, max_k, remove_repetitive):
+    # probsは各scaffoldに対応するprob matrixを入れるやつ
+    probs = []
+    for scaf in layout.scaffolds:
+        size = scaf.N
+        probs.append(np.zeros((size * 2, size * 2)))
+
+    if remove_repetitive:
+        # use only read that two "unique" flag are set
+        df = df[(df['U1'] == True) & (df['U2'] == True)]
+
+    # calc for each probabilities
+    index = [(0, 0), (0, 1), (1, 0), (1, 1)]
+    lengths = contigs.lengths
+    def calc_probs(d):
+        # contig id
+        I1, I2 = d.name[0], d.name[1]
+        S1, X1 = layout.id2order(I1)
+        S2, X2 = layout.id2order(I2)
+        # contig place
+        result = [0, 0, 0, 0]
+        if (S1 != S2) or (max_k and abs(X1 - X2) > max_k):
+            # scaffoldが違うところに乗っていたり、
+            # order上でk以上離れている確率は使わないので無視する
+            pass
+        else:
+            # scaffold
+            scaf = layout.scaffolds[S1]  # = S2
+            # position list
+            P1, P2 = d.P1.values, d.P2.values
+            # length list
+            L1, L2 = lengths[I1], lengths[I2]
+            gap = sum([ lengths[scaf.order[x]] for x in range(min(X1, X2)+1, max(X1, X2))])
+            for i, (o1, o2) in enumerate(index):
+                distances = get_dists_numpy(P1, P2, o1, o2, L1, L2, gap)
+                result[i] = estimator(distances).sum()
+        return pd.Series(result, index=index)
+
+    # use DataFrame.groupby from pandas
+    # https://pandas.pydata.org/pandas-docs/stable/user_guide/groupby.html
+    prob_df = df.groupby(['X1', 'X2']).apply(calc_probs)
+
+    for (x1, x2), p in prob_df.iterrows():
+        # 
 
 def get_prob_pandas(df, lengths, estimator, ordering=None, remove_repetitive=False, max_k=None):
     """
@@ -258,41 +225,6 @@ def get_prob_pandas(df, lengths, estimator, ordering=None, remove_repetitive=Fal
                 prob[i*2+d1, j*2+d2] = p
                 prob[j*2+d2, i*2+d1] = p
     return prob
-
-def get_prob_numpy(contacts, size, estimator):
-    """普通のやつ"""
-    prob = np.zeros((size*2, size*2))
-    for d1, d2 in [(0, 0), (0, 1), (1, 0), (1, 1)]:
-        print(d1, d2)
-        for i in tqdm(range(size)):
-            for j in range(i+1, size):
-                if j - i == 1:
-                    gap = 0
-                else:
-                    gap = 20000*(j-i-1)
-                c = contacts[i][j]
-                d = get_dists_numpy(c[0], c[1], d1, d2, 20000, 20000, gap)
-                if len(d) > 0:
-                    p = estimator(d).sum()
-                    prob[i*2+d1, j*2+d2] = p
-    return prob
-
-def estimate_distribution(ans, N=100000, bandwidth=10, debug=False):
-    # estimate Hi-C distance distribution
-    inter = [ abs(c['r1'][0][1] - c['r2'][0][1]) \
-            for key, c in ans.r.items() if len(c['r1'])==1 and len(c['r2'])==1 \
-            and c['r1'][0][0] == c['r2'][0][0]]
-    inter_downsampled = np.random.choice(inter, N)
-
-    X = inter_downsampled.reshape(-1, 1)
-    kde = KernelDensity(kernel='gaussian', bandwidth=bandwidth).fit(X)
-    if debug:
-        X_test = np.linspace(0, 2000, 50)[:, np.newaxis]
-        plt.subplot(2,1,1)
-        plt.plot(X_test, np.exp(kde.score_samples(X_test)))  # fitted
-        plt.subplot(2,1,2)
-        plt.hist(X, bins=50)  # samples
-        plt.show()
 
 def get_dists(contacts, direction1, direction2, L1, L2, gap):
     # get_dists([(1,100), ...], True, False)
