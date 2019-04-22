@@ -66,8 +66,14 @@ class Assembly:
             spliter[old_contig_id].append((contig_id, start, end))
         self.spliter = spliter
 
+    def __repr__(self):
+        return "<Assembly scaffolds: {}>".format(self.scaffolds)
+
     def get_new_pos(self, contig_id, contig_pos):
-        ls = self.spliter[contig_id]
+        try:
+            ls = self.spliter[contig_id]
+        except:
+            raise Exception('id:{}, pos:{}'.format(contig_id, contig_pos))
         if len(ls) == 1:
             # 分断されていない
             return ls[0][0], contig_pos  # (new_contig_id, contig_pos)
@@ -99,34 +105,34 @@ class Assembly:
                 N=len(self.names))
         return new_contigs
 
-    def get_new_df(self, df):
+    def get_new_df(self, old_df):
+        """update df"""
+        # valuesでアクセスするとdfの中身に直接触ってしまう。old_dfはそれだけで保持しておきたいのでcopy()してdeep copyしておく
+        df = old_df.copy()
         U1, U2 = df['U1'].values, df['U2'].values
         X1, X2, P1, P2 = df['X1'].values, df['X2'].values, df['P1'].values, df['P2'].values
         L = len(df)
         for i in range(L):
+            # contig id xと場所 p
             x1, x2, p1, p2 = X1[i], X2[i], P1[i], P2[i]
+            # 新しいcontig id nxと場所 np
             nx1, np1 = self.get_new_pos(x1, p1)
             nx2, np2 = self.get_new_pos(x2, p2)
             if nx1 <= nx2:
                 X1[i], X2[i], P1[i], P2[i], U1[i], U2[i] = nx1, nx2, np1, np2, U1[i], U2[i]
             else:
                 X1[i], X2[i], P1[i], P2[i], U1[i], U2[i] = nx2, nx1, np2, np1, U2[i], U1[i]
-        df_new = pd.DataFrame(
-            data={ \
-                  'X1':X1,'X2':X2, \
-                  'P1':P1,'P2':P2, \
-                  'U1':U1,'U2':U2 \
-                  }
-        )
-        return df_new
+            if nx1 == 5:
+                break
+        return df
 
-def update_with_3ddna_output(asm_filename, contigs, df):
-    """
-    3d-dna cuts contigs and line them, so contigs and df are updated.
-
-    """
-    asm = Assembly(asm_filename, contigs)
-    return contigs_new, df_new
+    def update_all(self, contigs, df):
+        """
+        3d-dna cuts contigs and line them, so contigs and df are updated.
+        """
+        contigs_new = self.get_new_contigs(contigs)
+        df_new = self.get_new_df(df)
+        return contigs_new, df_new
 
 if __name__ == '__main__':
     from contigs import Contigs

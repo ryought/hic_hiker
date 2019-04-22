@@ -15,31 +15,34 @@ result is composed of DataFrame, pandas.
 def get_contacts_mnd(contigs, mnd_filename):
     """get Hi-C contacts from mnd, or merged_nodups.txt, output of juicer(Aiden lab)"""
     X1, X2, P1, P2, U1, U2 = [], [], [], [], [], []
-    N = 0
+    N, M = 0, 0
     with open(mnd_filename, 'r') as f:
         reader = csv.reader(f, delimiter=' ')
         for row in tqdm(reader):
             # x1, x2: contig id
-            x1, x2 = contigs.get_id(row[1]), contigs.get_id(row[5])
-            # p1, p2: mapping position. position in mnd(and samfile) is 1-origin, but df uses 0-origin.
-            p1, p2 = int(row[2])-1, int(row[6])-1
-            # row X1 and X2 must satisfy X1 <= X2
-            if x1 <= x2:
-                X1.append(x1)
-                X2.append(x2)
-                P1.append(p1)
-                P2.append(p2)
-                U1.append(True)
-                U2.append(True)
-            elif x1 > x2:
-                X1.append(x2)
-                X2.append(x1)
-                P1.append(p2)
-                P2.append(p1)
-                U1.append(True)
-                U2.append(True)
-            N += 1
-    print('processed', N, 'lines')
+            try:
+                x1, x2 = contigs.get_id(row[1]), contigs.get_id(row[5])
+                # p1, p2: mapping position. position in mnd(and samfile) is 1-origin, but df uses 0-origin.
+                p1, p2 = int(row[2])-1, int(row[6])-1
+                # row X1 and X2 must satisfy X1 <= X2
+                if x1 <= x2:
+                    X1.append(x1)
+                    X2.append(x2)
+                    P1.append(p1)
+                    P2.append(p2)
+                    U1.append(True)
+                    U2.append(True)
+                elif x1 > x2:
+                    X1.append(x2)
+                    X2.append(x1)
+                    P1.append(p2)
+                    P2.append(p1)
+                    U1.append(True)
+                    U2.append(True)
+                N += 1
+            except:
+                M += 1
+    print('processed', N, 'lines, and skipped', M, 'lines')
     df = pd.DataFrame(
         data={ 'X1':X1,'X2':X2, \
                'P1':P1,'P2':P2, \

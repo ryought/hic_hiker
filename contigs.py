@@ -23,11 +23,18 @@ class Contigs:
             self.N = N
         elif fasta_filename:
             self._parse(fasta_filename)
+        else:
+            raise Exception('not enough arguments')
 
     def __repr__(self):
-        return "<Contigs (# {}) path:{} names:{} lengths:{}>".format(
-                self.N, self.fasta_filename, self.names[:10], self.lengths[:10]
-                )
+        if self.N > 10:
+            return "<Contigs (# {}) path:{} names:{}... lengths:{}...>".format(
+                    self.N, self.fasta_filename, self.names[:10], self.lengths[:10]
+                    )
+        else:
+            return "<Contigs (# {}) path:{} names:{} lengths:{}>".format(
+                    self.N, self.fasta_filename, self.names, self.lengths
+                    )
 
     def _parse(self, fasta_filename):
         self.fasta_filename = fasta_filename
