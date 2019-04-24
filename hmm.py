@@ -58,6 +58,36 @@ def transition_prob(j0, j1, k):
     else:
         return -np.inf
 
+from layout import Scaffold, Layout
+from contigs import Contigs
+def optimize_layout(probs, contigs: Contigs, layout: Layout, k=None, K=None):
+    new_scaffolds = []
+    Nignored = 0
+    print('running!')
+    from tqdm import tqdm_notebook as tqdm
+    for (scaffold, prob) in tqdm(zip(layout.scaffolds, probs)):
+        if k:
+            ks = get_ks_constant_k(scaffold.N, k)
+        elif K:
+            ks = get_ks_adaptive(contigs.lengths, K)
+        else:
+            raise Exception
+
+        if len(ks) < 2:
+            # only 0 or 1 state, this algorithm cannot improve the scaffold's orientation
+            Nignored += 1
+            new_scaffolds.append(scaffold)
+        else:
+            orientation, _, _, _ = run_hmm_adaptive(prob, ks)
+            # print(list(zip(orientation, scaffold.orientation)))
+            # break
+            # update contig orientations of each scaffold
+            new_scaffold = Scaffold(order=scaffold.order, orientation=orientation)
+            new_scaffolds.append(new_scaffold)
+    new_layout = Layout(new_scaffolds)
+    print('ignored', Nignored, 'contigs')
+    return new_layout
+
 def run_hmm_adaptive(prob, ks):
     """
     prob -> ks -> path
@@ -65,7 +95,7 @@ def run_hmm_adaptive(prob, ks):
     ks :: [(contig_id, length)]
       ここでcontig_idはそのstateの最初のcontigのid、lengthは同時に考えるcontigの個数
     """
-    assert ((ks[0] - 1) + len(ks)) * 2 == prob.shape[0] == prob.shape[1]
+    assert ((ks[0] - 1) + len(ks)) * 2 == prob.shape[0] == prob.shape[1], 'prob.shape[0]:{}, prob.shape[1]:{}, ks[0]:{}, len(ks):{}'.format(prob.shape[0], prob.shape[1], ks[0], len(ks))
     N = len(ks)  # number of states
     states = [ np.zeros(2**ks[i])            for i in range(N) ]
     origin = [ [-1 for _ in range(2**ks[i])] for i in range(N) ]  # origin[i][j]  state[i][j]はどこからきたか？
@@ -77,8 +107,8 @@ def run_hmm_adaptive(prob, ks):
         # 初期確率と、その時のemissionを掛けたものがviterbi確率
         states[0][j] = p0 + emission_prob(i=0, j=j, prob=prob, ks=ks)
 
-    from tqdm import tqdm_notebook as tqdm
-    for i in tqdm(range(1, N)):
+    # for i in tqdm(range(1, N)):
+    for i in range(1, N):
         # time iに移行
         p = np.zeros(len(states[i-1]))
         for j in range(len(states[i])):

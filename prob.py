@@ -48,7 +48,7 @@ def get_prob(df: pd.DataFrame, contigs: Contigs, layout: Layout, estimator, max_
 
     # use DataFrame.groupby from pandas
     # https://pandas.pydata.org/pandas-docs/stable/user_guide/groupby.html
-    print('calcing version2')
+    print('calcing version3')
     """
     if show_progress:
         from tqdm import tqdm
@@ -67,21 +67,19 @@ def get_prob(df: pd.DataFrame, contigs: Contigs, layout: Layout, estimator, max_
 
     P1, P2 = df.P1.values, df.P2.values
     groups = df.groupby(['X1', 'X2']).groups.items()
-    print('iter version2')
+    print('iter version3')
     for (I1, I2), idx in tqdm(groups):
-        # print
-        # d = df.iloc[idx]  # これ使うと遅い
-        #   P1, P2 = d.P1.values, d.P2.values
         S1, X1 = layout.id2order(I1)
         S2, X2 = layout.id2order(I2)
         # contig place
-        # result = [0, 0, 0, 0]
         if (S1 != S2) or (max_k and abs(X1 - X2) > max_k):
             # scaffoldが違うところに乗っていたり、
             # order上でk以上離れている確率は使わないので無視する
             pass
+        elif X1 == X2:
+            # ignore contacts on the same contig
+            pass
         else:
-            # print(I1, I2)
             # scaffold
             scaf = layout.scaffolds[S1]  # = S2
             # position list
@@ -91,7 +89,11 @@ def get_prob(df: pd.DataFrame, contigs: Contigs, layout: Layout, estimator, max_
             gap = sum([ lengths[scaf.order[x]] for x in range(min(X1, X2)+1, max(X1, X2))])
             assert S1 == S2
             for i, (o1, o2) in enumerate(index):
-                distances = get_dists(p1, p2, o1, o2, L1, L2, gap)
+                # get_distsはp1.x < p2.xを仮定しているので
+                if X1 < X2:
+                    distances = get_dists(p1, p2, o1, o2, L1, L2, gap)
+                else:
+                    distances = get_dists(p2, p1, o2, o1, L2, L1, gap)
                 p = estimator(distances).sum()
                 # probは対称行列にならないとおかしい
                 probs[S1][2*X1 + o1, 2*X2 + o2] = p

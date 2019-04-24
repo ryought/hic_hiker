@@ -3,6 +3,7 @@
 """
 """
 from contigs import Contigs
+from layout import Layout, Scaffold
 import pandas as pd
 class Assembly:
     def __init__(self, asm_filename, contigs, delimiter=':::'):
@@ -84,13 +85,14 @@ class Assembly:
             return contig_id_new, end - 1
 
     def get_layout(self):
-        from layout import Layout
-        order       = [[o   for (o, ori) in scaffold] for scaffold in self.scaffolds]
-        orientation = [[ori for (o, ori) in scaffold] for scaffold in self.scaffolds]
-        layout = Layout(
-                orders=order,
-                orientations=orientation,
-                )
+        # layout
+        print('layout')
+        scaffolds = []
+        for scaffold in self.scaffolds:
+            order       = [o   for (o, ori) in scaffold]
+            orientation = [ori for (o, ori) in scaffold]
+            scaffolds.append(Scaffold(order=order, orientation=orientation))
+        layout = Layout(scaffolds)
         return layout
 
     def get_new_contigs(self, old_contigs: Contigs):
@@ -122,8 +124,6 @@ class Assembly:
                 X1[i], X2[i], P1[i], P2[i], U1[i], U2[i] = nx1, nx2, np1, np2, U1[i], U2[i]
             else:
                 X1[i], X2[i], P1[i], P2[i], U1[i], U2[i] = nx2, nx1, np2, np1, U2[i], U1[i]
-            if nx1 == 5:
-                break
         return df
 
     def update_all(self, contigs, df):
