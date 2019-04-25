@@ -66,22 +66,22 @@ def optimize_layout(probs, contigs: Contigs, layout: Layout, k=None, K=None):
     print('running!')
     from tqdm import tqdm_notebook as tqdm
     for (scaffold, prob) in tqdm(zip(layout.scaffolds, probs)):
-        if k:
-            ks = get_ks_constant_k(scaffold.N, k)
-        elif K:
-            ks = get_ks_adaptive(contigs.lengths, K)
-        else:
-            raise Exception
-
-        if len(ks) < 2:
+        if scaffold.N < 2:
             # only 0 or 1 state, this algorithm cannot improve the scaffold's orientation
             Nignored += 1
             new_scaffolds.append(scaffold)
         else:
-            orientation, _, _, _ = run_hmm_adaptive(prob, ks)
-            # print(list(zip(orientation, scaffold.orientation)))
-            # break
+            if k:
+                ks = get_ks_constant_k(scaffold.N, k)
+            elif K:
+                # scaffoldの順番にcontigのbp長さを入れたもの
+                scaffold_lengths = [contigs.lengths[contig_id] for contig_id in scaffold.order]
+                ks = get_ks_adaptive(scaffold_lengths, K)
+            else:
+                raise Exception
+
             # update contig orientations of each scaffold
+            orientation, _, _, _ = run_hmm_adaptive(prob, ks)
             new_scaffold = Scaffold(order=scaffold.order, orientation=orientation)
             new_scaffolds.append(new_scaffold)
     new_layout = Layout(new_scaffolds)
@@ -146,73 +146,20 @@ def get_ks_constant_k(Ncontigs, k):
     return [ k for _ in range(Ncontigs - (k-1)) ]
 
 def get_ks_adaptive(lengths, K):
-    return ()
-
-def show_benchmark(layout, pro, k, head=10):
-    """debug用のbenchmark関数"""
-    #P = np.exp(pro)
-    P = pro
-    N = 0
-    locus_prob = []
-    for i in range(len(layout)-k):
-        N += 1
-        if layout[i] == 0:
-            #continue
-            pass
-        
-        # layout 表示部分
-        U = P[i+1][0:2**(k-1)]
-        D = P[i+1][2**(k-1):2**k]
-        sU = log_sum(U)
-        sD = log_sum(D)
-        sUD = log_add(sU, sD)
-        
-        locus_prob.append((i, layout[i], np.exp(sU-sUD), np.exp(sD-sUD)))
-        
-        if N < head:
-            print('\x1b[31m', i, layout[i], '\x1b[0m', np.exp(sU-sUD), np.exp(sD-sUD))
-        
-    for step in range(k, 0, -1):
-        N += 1
-        i = len(layout)-step
-        LP = P[len(layout)-k+1]
-        # step-1個右にシフトして、1とandとった奴が0の時上、1の時下 (最下位ビットが0ならU)
-        U, D = [], []
-        for j in range(len(LP)-1):
-            if (j >> (step-1) & 1) == 0:
-                #rint(j)
-                U.append(LP[j])
-            else:
-                D.append(LP[j])
-        sU = log_sum(U)
-        sD = log_sum(D)
-        sUD = log_add(sU, sD)
-        locus_prob.append((i, layout[i], np.exp(sU-sUD), np.exp(sD-sUD)))
-        if N < head:
-            print('\x1b[31m', i, layout[i], '\x1b[0m', np.exp(sU-sUD), np.exp(sD-sUD))
-            
-    return locus_prob
-
-def get_ranges(lengths, K=20):
-    """
-    adaptiveなやつ用
-    K: [(2, 2), (3, 2), (4, 1), (5, 1)]  各状態の開始index(0-origin)と、その隣を何個考えるか
-    """
-    k = []
+    # lengthsはcontigの長さをscaffoldの順番に並べたもの
+    # 最終的には考える状態の個数(k)を並べる
+    cumsum = np.cumsum(lengths)
+    ks = []
     for i in range(1, len(lengths)):
-        # iで終わる区間について
-        #print(i)
-        #print(lengths[:i])
-        lst = np.cumsum(list(reversed(lengths[:i])))
-        #print(lst)
-        idxs = np.arange(i)[lst > K]
-        #print(idxs)
-        if len(idxs) == 0:
-            continue
-        else:
-            k.append((i, idxs[0]+1))
-    k[0] = (k[0][0], k[0][0])
-    return k
+        l = cumsum[:i]
+        sub = [(j+2, l[-1]-l[-1-j]) for j in range(len(l))]
+        k = list(filter(lambda x: x[1] < K, sub))[-1]
+        ks.append((i, k[0]))
+    for i in range(len(ks)):
+        x, y = ks[i]
+        if x + 1 != y:
+            break
+    return [x[1] for x in ks[i-1:]]
 
 if __name__ == '__main__':
     psr = argparse.ArgumentParser()
