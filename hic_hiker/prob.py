@@ -6,14 +6,16 @@ from tqdm import tqdm_notebook as tqdm
 import pysam
 import argparse
 import pandas as pd
+import feather
 
 """
 確率を求める関係のやつ
 df, contigs
 """
 
-from layout import Layout
-from contigs import Contigs
+from .layout import Layout
+from .contigs import Contigs
+
 def get_prob(df: pd.DataFrame, contigs: Contigs, layout: Layout, estimator, max_k=None, remove_repetitive=False, show_progress=False):
     if remove_repetitive:
         # use only read that two "unique" flag are set
@@ -198,7 +200,6 @@ if __name__ == '__main__':
         inter = get_intercontig_contacts(args.ref_r1, args.ref_r2)
         f, raw = get_kde_polyfit_estimator(inter, N=100000, bandwidth=200, maxlength=150000, points=500, degree=50)
     if args.pandas:
-        import feather
         df = feather.read_dataframe(args.pandas)
         if not (args.ref_r1 and args.ref_r2):
             print('infer from longest contig')

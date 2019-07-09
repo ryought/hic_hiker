@@ -7,6 +7,8 @@ import pandas as pd
 import csv
 import pysam
 
+from .contigs import Contigs
+
 """
 Get contacts from mnd(merged nodups txt) or sam(sam r1 and sam r2).
 result is composed of DataFrame, pandas.
@@ -100,7 +102,6 @@ def get_contacts_sam(contigs, sam_r1_filename, sam_r2_filename):
     return df
 
 def test():
-    from contigs import Contigs
     contigs = Contigs('test/small_mock/contigs.fasta')
     df = get_contacts_mnd(contigs, 'test/small_mock/mnd.txt')
     print(df)
@@ -115,7 +116,6 @@ def main():
     args = psr.parse_args()
 
     print('parsing fasta')
-    from contigs import Contigs
     contigs = Contigs(args.fasta)
 
     if args.sam_r1 and args.sam_r2:

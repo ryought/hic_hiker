@@ -3,8 +3,6 @@
 """
 contig class
 """
-# import numpy as np
-# import pysam
 from Bio import SeqIO
 
 class Contigs:

@@ -3,7 +3,10 @@ import argparse
 
 import os
 import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '.'))
+# sys.path.append(os.path.join(os.path.dirname(__file__), '.'))
+
+from .layout import Scaffold, Layout
+from .contigs import Contigs
 
 np.set_printoptions(formatter={'float': '{: 0.10e}'.format}, linewidth=200)
 #np.set_printoptions(suppress=True)
@@ -58,12 +61,9 @@ def transition_prob(j0, j1, k):
     else:
         return -np.inf
 
-from layout import Scaffold, Layout
-from contigs import Contigs
 def optimize_layout(probs, contigs: Contigs, layout: Layout, k=None, K=None):
     new_scaffolds = []
     Nignored = 0
-    print('running!')
     from tqdm import tqdm_notebook as tqdm
     for (scaffold, prob) in tqdm(zip(layout.scaffolds, probs)):
         if scaffold.N < 2:
@@ -143,7 +143,10 @@ def run_hmm_adaptive(prob, ks):
     return orientation, path, states, origin
 
 def get_ks_constant_k(Ncontigs, k):
-    return [ k for _ in range(Ncontigs - (k-1)) ]
+    if Ncontigs < k:
+        return [ Ncontigs ]
+    else:
+        return [ k for _ in range(Ncontigs - (k-1)) ]
 
 def get_ks_adaptive(lengths, K):
     # lengthsはcontigの長さをscaffoldの順番に並べたもの

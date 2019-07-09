@@ -3,8 +3,8 @@
 """
 ベンチマークする
 """
-from layout import Scaffold, Layout
-from contigs import Contigs
+from .layout import Scaffold, Layout
+from .contigs import Contigs
 
 # 評価結果
 OK = 'ok'

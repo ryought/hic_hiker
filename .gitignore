@@ -10,3 +10,6 @@
 # python
 *.pyc
 __pycache__/
+
+.mypy_cache/
+hic_hiker.egg-info/

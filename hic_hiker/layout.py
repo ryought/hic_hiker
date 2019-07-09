@@ -2,9 +2,12 @@
 # -*- coding: utf-8 -*-
 """
 """
-# from Bio.SeqRecord import SeqRecord
-from contigs import Contigs
+from Bio.SeqRecord import SeqRecord
+from Bio import SeqIO
+from Bio.Seq import Seq
 import pysam
+# internal
+from .contigs import Contigs
 
 class Scaffold:
     def __init__(self, N=None, order=None, orientation=None, name=''):
@@ -111,10 +114,22 @@ def get_reference_layout_from_sam(sam_filename: str, contigs: Contigs) -> Layout
     layout = Layout(scaffolds)
     return layout
 
-def get_fasta(layout, contigs, filename):
+def get_fasta(layout: Layout, contigs: Contigs, filename: str):
     """指定のレイアウトでcontigを並べたfastaを作る"""
-    # TODO
-    print('saved')
+    output_scaffolds = []
+    for (scaf_id, scaf) in enumerate(layout.scaffolds):
+        scaf_sequence = Seq('')  # 空seq
+        for i, ori in zip(scaf.order, scaf.orientation):
+            if ori == 1:
+                # revcomp
+                scaf_sequence += contigs.sequences[i].reverse_complement()
+            elif ori == 0:
+                scaf_sequence += contigs.sequences[i]
+            else:
+                print('ori does not match 0 or 1')
+        output_scaffolds.append(SeqRecord(scaf_sequence, 'hicscaffold_{:06}'.format(scaf_id), '', ''))
+    SeqIO.write(output_scaffolds, filename, 'fasta')
+    print('saved as', filename)
 
 def main():
     s = Scaffold(N=10)

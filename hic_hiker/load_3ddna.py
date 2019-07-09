@@ -2,9 +2,10 @@
 # -*- coding: utf-8 -*-
 """
 """
-from contigs import Contigs
-from layout import Layout, Scaffold
 import pandas as pd
+from .contigs import Contigs
+from .layout import Layout, Scaffold
+from .load import get_contacts_mnd
 class Assembly:
     def __init__(self, asm_filename, contigs, delimiter=':::'):
         """
@@ -96,8 +97,11 @@ class Assembly:
         return layout
 
     def get_new_contigs(self, old_contigs: Contigs):
-        sequences = [[old_contigs.sequences[contig_id][start:end] for (_, start, end) in new_contigs]
-                for (contig_id, new_contigs) in enumerate(self.spliter)]
+        sequences = [None for _ in range(len(self.names))]
+        for old_id, new_contigs in enumerate(self.spliter):
+            for (id, start, end) in new_contigs:
+                sequences[id] = old_contigs.sequences[old_id][start:end]
+        assert len([x for x in sequences if x is None]) == 0
         new_contigs = Contigs(
                 fasta_filename=old_contigs.fasta_filename,
                 names=self.names,
@@ -135,7 +139,6 @@ class Assembly:
         return contigs_new, df_new
 
 if __name__ == '__main__':
-    from contigs import Contigs
     contigs = Contigs('test/small_mock/contigs.fasta')
     asm = Assembly('test/small_mock/test.final.assembly', contigs)
     print(asm)
@@ -148,7 +151,6 @@ if __name__ == '__main__':
     print(asm.get_new_contigs(contigs))
 
     contigs = Contigs('test/small_mock/contigs.fasta')
-    from load import get_contacts_mnd
     df = get_contacts_mnd(contigs, 'test/small_mock/mnd.txt')
     print(df)
 
