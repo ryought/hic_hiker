@@ -138,6 +138,18 @@ class Assembly:
         df_new = self.get_new_df(df)
         return contigs_new, df_new
 
+    def generate_assembly_with_new_layout(self, new_asm_filename, contigs, new_layout, delimiter=':::'):
+        text = ''
+        for (name, length) in zip(self.names, self.lengths):
+            cid = self.ids[name]
+            text += '>{} {} {}\n'.format(name, cid+1, length)
+        for scaf in new_layout.scaffolds:
+            scaf_text = ' '.join([('-' if orientation == 1 else '') + str(cid+1) for (cid, orientation) in zip(scaf.order, scaf.orientation)])
+            text += scaf_text
+            text += '\n'
+        with open(new_asm_filename, mode='w') as f:
+            f.write(text)
+
 if __name__ == '__main__':
     contigs = Contigs('test/small_mock/contigs.fasta')
     asm = Assembly('test/small_mock/test.final.assembly', contigs)
