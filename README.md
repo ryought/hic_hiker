@@ -1,37 +1,78 @@
-# hic_hiker
-orientation
+# hic_hiker v1.0.0
 
-## modules
-- main.py
-    CUI app module
-- load.py
-    from sam file to contacts.pkl (parser)
-- prob.py
-    from contacts.pkl to prob.npy (kde and polyfit)
-- hmm.py
-    from prob.npy to most probable path (hmm)
+3D-DNA scaffolds refinement
 
-## descritption of intermidiate files
-- contacts.pkl
-    `contacts[i][j], (i<j)` is a list of contacts between contig i and j. `contacts[i][j][0]` is ndarray of position of each contact in contig i.
-- prob.npy
-    `prob[2*i+(0or1), 2*j+(0or1)]` represents probability of layout of contig i and j. (0or1) is orientation.
 
-## how to run
-### whole pipeline
-1. generate contigs with an assembler you prefer
-    We assume you get `contigs.fasta`
-2. mapping
+## Installation
 ```
-bwa mem -t 16 contigs.fasta R1.fastq > contigs.R1.sam
-bwa mem -t 16 contigs.fasta R2.fastq > contigs.R2.sam
+$ pip install -e .
 ```
-3. run
-`python main.py contigs.R1.sam contigs.R2.sam`
 
-### each part
-`python [script] [input] [output]`
+This will install the python package (and its cli command) `hic_hiker`.
 
+(In the future, `$ pip install hic_hiker`)
 
-## parameter
-- debug
+### Requirements
+
+To run HiC-Hiker, you will need to install the following:
+
+- `3D-DNA, juicer` and their requirements
+- `python3, >=3.5` with
+    - `numpy, matplotlib, sklearn, scipy` (basic matrix operation and visualization)
+    - `pandas, feather` (handling of large datasets)
+    - `BioPython` (fasta parsing)
+    - `pysam` (sam parsing)
+    - `tqdm` (progress bar)
+    - `matplotlib-scalebar` (to show scalebar on the benchmark matrix plot)
+    (These will automatically satisfied while installation using `pip`)
+
+### System Requirements
+
+- RAM >100GB for human dataset
+
+## Usage
+
+### Required Files
+
+You have to prepare
+
+- Input of 3D-DNA:
+    - contigs: `.fasta`
+    - Hi-C contacts: `.mnd.txt` (or `.R1.sam, .R2.sam`)
+- Output of 3D-DNA:
+    - scaffold layout: `.final.assembly`
+        You are recommended to use not `.FINAL.assembly` but `.final.assembly`
+    - (chopped contigs: `.final.fasta`)
+- A directory for workspace (to store intermediate files or results)
+
+Additionally, to run benchmarks with the reference sequence (and to plot the figures on our paper), you will need
+- alignment of contigs to the reference: `.sam`
+
+by running
+```
+$ bwa mem -t 32 ../hg38/hg38.fa GSE95797_Hs1.final.fasta > GSE95797_Hs1.final.fasta.sam
+```
+where `GSE95797_Hs1.final.fasta` is one of the outputs of 3D-DNA. (chopped contigs)
+
+### Pipeline
+```
+$ hic_hiker <contigs.fasta> <scaffold_layout.assembly> <contacts.mnd.txt> <workspace directory> <K>
+```
+
+After the process finishes, you will see in workspace directory:
+
+- `polished.assembly` assembly file with refinement of orientations
+- `polished.fasta` polished chromosome-length scaffold sequences (with no gap added)
+- figures
+    - `fig_distribution.png`
+    - `fig_errorchart.png`
+    - `fig_matrix.png`
+
+## Uninstallation
+```
+$ pip uninstall hic_hiker
+```
+
+## Citation
+
+HiC-Hiker: A probabilistic model to determine contig orientation in chromosome-length scaffolds by Hi-C (not published)
