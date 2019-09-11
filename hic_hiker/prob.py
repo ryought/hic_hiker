@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.neighbors.kde import KernelDensity
-from tqdm import tqdm_notebook as tqdm
-#from tqdm import tqdm as tqdm
+# from tqdm import tqdm_notebook as tqdm
+from tqdm import tqdm as tqdm
 import pysam
 import argparse
 import pandas as pd
@@ -114,6 +114,17 @@ def get_dists(x, y, orientation1, orientation2, L1, L2, gap):
     elif orientation1 == 1 and orientation2 == 1:
         return L2-y+x+gap
 
+def infer_from_config(df, contigs, contig_name, maxlength):
+    contig_id = contigs.get_id(contig_name)
+    C = df[(df['X1']==contig_id) & (df['X2']==contig_id)]
+    inter = np.abs(C['P1'].values - C['P2'].values)
+    print('# of contacts: {}, contig_name: {}, contig_id: {}'.format(len(inter), contig_name, contig_id))
+    f, raw = get_kde_polyfit_estimator(inter, \
+                                       N=30000, bandwidth=200, \
+                                       maxlength=maxlength, \
+                                       points=500, degree=50)
+    return f, raw
+
 def infer_from_longest_contig(df, contigs, remove_repetitive=False, maxlength=150000, image_filename=None):
     """
     最長のcontigから推定器を作る
@@ -131,8 +142,8 @@ def infer_from_longest_contig(df, contigs, remove_repetitive=False, maxlength=15
                                        N=30000, bandwidth=200, \
                                        maxlength=maxlength, \
                                        points=500, degree=50)
-    estimator_benchmark(inter, raw, f, maxlength=maxlength+50000, output=image_filename)
-    return f
+    # estimator_benchmark(inter, raw, f, maxlength=maxlength+50000, output=image_filename)
+    return f, raw
 
 def get_kde_estimator(samples, N=10000, bandwidth=200, debug=False):
     """sample(サンプル点のリスト)をKDEでノンパラメトリックにフィッティングして、その識別器を返す"""
@@ -151,17 +162,20 @@ def get_kde_polyfit_estimator(samples, N=100000, bandwidth=200, maxlength=150000
     z = np.polyfit(x, f(x), degree)
     return (lambda x: np.where(x<=maxlength, np.poly1d(z)(x), np.poly1d(z)(maxlength))), f
 
+def estimator_benchmark2(hoge):
+    print('hoge:', hoge)
+
 def estimator_benchmark(inter, estimator, f, maxlength, output=None):
     """estimator: kde, f: polyfitted"""
     x1 = np.linspace(1, maxlength, 500)
     x2 = np.linspace(1, 20000, 200)
     plt.figure(figsize=(8, 8))
-    plt.subplot(3, 1, 1)
-    plt.xlabel('basepair distance between Hi-C contact')
-    plt.ylabel('frequency')
-    _ = plt.hist(inter, bins=200)
+    #plt.subplot(3, 1, 1)
+    #plt.xlabel('basepair distance between Hi-C contact')
+    #plt.ylabel('frequency')
+    #_ = plt.hist(inter, bins=200)
 
-    plt.subplot(3, 1, 2)
+    #plt.subplot(3, 1, 2)
     plt.xlabel('basepair distance between Hi-C contact')
     plt.ylabel('log probability')
     #plt.xscale('log')
@@ -170,11 +184,11 @@ def estimator_benchmark(inter, estimator, f, maxlength, output=None):
     plt.legend()
     plt.axvspan(1, 20000, facecolor='g', alpha=0.2)
 
-    plt.subplot(3, 1, 3)
-    plt.xlabel('basepair distance between Hi-C contact')
-    plt.ylabel('log probability')
-    plt.plot(x2, estimator(x2))
-    plt.plot(x2, f(x2))
+    #plt.subplot(3, 1, 3)
+    #plt.xlabel('basepair distance between Hi-C contact')
+    #plt.ylabel('log probability')
+    #plt.plot(x2, estimator(x2))
+    #plt.plot(x2, f(x2))
     plt.legend()
     plt.axvspan(1, 20000, facecolor='g', alpha=0.2)
     # いい感じに調整

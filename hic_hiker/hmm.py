@@ -64,7 +64,8 @@ def transition_prob(j0, j1, k):
 def optimize_layout(probs, contigs: Contigs, layout: Layout, k=None, K=None):
     new_scaffolds = []
     Nignored = 0
-    from tqdm import tqdm_notebook as tqdm
+    # from tqdm import tqdm_notebook as tqdm
+    from tqdm import tqdm as tqdm
     for (scaffold, prob) in tqdm(zip(layout.scaffolds, probs)):
         if scaffold.N < 2:
             # only 0 or 1 state, this algorithm cannot improve the scaffold's orientation
