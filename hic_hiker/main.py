@@ -7,9 +7,9 @@ import matplotlib.pyplot as plt
 from sklearn.neighbors.kde import KernelDensity
 import os
 
-from memory_profiler import profile
+# from memory_profiler import profile
 
-@profile
+# @profile
 def main():
     psr = argparse.ArgumentParser()
     psr.add_argument('fasta', help='assembler output fasta file containing contigs')
