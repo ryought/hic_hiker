@@ -11,18 +11,17 @@ from . import prob, layout, benchmark
 
 # Figure
 def fig_distribution(contigs, df, K):
-	top = np.argsort(contigs.lengths)[::-1]
-	print('1st', top[0], contigs.lengths[top[0]], contigs.get_name(top[0]))
-
+    top = np.argsort(contigs.lengths)[::-1]
+    K0 = 10**3.5
 	# generate top three estimators
-	estimator, raw_estimator_0 = prob.infer_from_config(df, contigs, maxlength=K, contig_name=contigs.get_name(top[0]))
-	_, raw_estimator_1         = prob.infer_from_config(df, contigs, maxlength=K, contig_name=contigs.get_name(top[1]))
-	_, raw_estimator_2         = prob.infer_from_config(df, contigs, maxlength=K, contig_name=contigs.get_name(top[2]))
+    estimator, raw_estimator_0 = prob.infer_from_contig2(df, contigs, top[0], K=K, K0=K0)
+    _, raw_estimator_1         = prob.infer_from_contig2(df, contigs, top[1], K=K, K0=K0)
+    _, raw_estimator_2         = prob.infer_from_contig2(df, contigs, top[2], K=K, K0=K0)
 
 	# draw plot
-	_fig_distribution(raw_estimator_0, raw_estimator_1, raw_estimator_2, estimator, K)
+    _fig_distribution(raw_estimator_0, raw_estimator_1, raw_estimator_2, estimator, K)
 
-def _fig_distribution(raw_estimator_1st, raw_estimator_2nd, raw_estimator_3rd, estimator, K=75000):
+def _fig_distribution(raw_estimator_1st, raw_estimator_2nd, raw_estimator_3rd, estimator, K):
     """
     >>> fig_distribution()
     >>> plt.show()
@@ -176,7 +175,7 @@ def _inspect_with_size(probs, polished_layout, contigs, result, scaf_id, pos):
     M2 = matrix_by_range(M, lengths, unit_length=unit_length)
 
 	# show the matrix
-    im = plt.imshow(np.exp(M2), cmap='bwr', interpolation='none', aspect=1.0)  # used to use bwr
+    im = plt.imshow(np.exp(M2), cmap='bwr', interpolation=None, aspect=1.0)
     plt.clim(0, 1)
 
 	# show the scalebar
@@ -213,11 +212,11 @@ def _inspect_with_size(probs, polished_layout, contigs, result, scaf_id, pos):
     #plt.grid(which='minor', color='w', linestyle='-', linewidth=2)
     #plt.grid(color='black', linestyle='-', linewidth=0.1)
     #plt.axes().yaxis.set_minor_locator(plt.MultipleLocator(1.0))
-    ax = plt.gca();
-    ax.set_xticks(np.arange(-.5, M2.shape[0], 10), minor=True)
-    ax.set_yticks(np.arange(-.5, M2.shape[0], 10), minor=True)
+    #ax = plt.gca();
+    #ax.set_xticks(np.arange(-.5, M2.shape[0], 10), minor=True)
+    #ax.set_yticks(np.arange(-.5, M2.shape[0], 10), minor=True)
     #ax.grid(which='minor', color='gray', linestyle='dashed', linewidth=0.5)
-    plt.tick_params(which='minor', bottom=False, left=False)
+    #plt.tick_params(which='minor', bottom=False, left=False)
     #plt.grid(color='black', linewidth=0.1)
 
     plt.tight_layout()

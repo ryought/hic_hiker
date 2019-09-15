@@ -16,8 +16,6 @@ def main():
     psr.add_argument('assembly', help='assembler output fasta file containing contigs')
     psr.add_argument('mnd', help='mnd.txt file')
     psr.add_argument('workspace', help='workspace directory')
-    psr.add_argument('-n', default=100000, help='number of intra-contig contacts to be sampled for distribution estimation with KDE.', type=int)
-    psr.add_argument('-w', default=10, help='KDE bandwidth parameter for distribution estimation', type=int)
     psr.add_argument('-K', default=75000, help='threshold', type=int)
     psr.add_argument('--refsam', help='sam file')
     psr.add_argument('--from', help='start from intermediate files', type=int)
@@ -52,15 +50,16 @@ def main():
     contigs2, df2 = asm.update_all(contigs, df)
 
     print('[step 2] estimating the contact probability distribution')
-    estimator, raw_estimator = prob.infer_from_longest_contig(
+    estimator, raw_estimator = prob.infer_from_longest_contig2(
             df2,
             contigs2,
-            maxlength=args.K
+            K=args.K,
+            K0=10**3.5
             )
 
     plt.figure()
     figures.fig_distribution(contigs, df, args.K)
-    plt.savefig(workdir + 'fig_distribution.png', dpi=100)
+    plt.savefig(workdir + 'fig_distribution.pdf', bbox_inches='tight', pad_inches=0.05)
 
     print('[step 3] calculating emission probabilities')
     probs = prob.get_prob(
@@ -115,11 +114,11 @@ def main():
 
         plt.figure()
         figures.fig_errorchart(results)
-        plt.savefig(workdir + 'fig_errorchart.png', dpi=100)
+        plt.savefig(workdir + 'fig_errorchart.pdf', bbox_inches='tight', pad_inches=0.05)
 
         plt.figure()
         figures.fig_matrix(probs, contigs2, polished_layouts[3], results[3])
-        plt.savefig(workdir + 'fig_matrix.png', dpi=100)
+        plt.savefig(workdir + 'fig_matrix.pdf', bbox_inches='tight', pad_inches=0.05)
 
     print('finished all process')
 

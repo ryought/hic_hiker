@@ -1,0 +1,4 @@
+log p = c log x
+p = exp (c log x)
+p = exp (log x^c)
+p = x^c

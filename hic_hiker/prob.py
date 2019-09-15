@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.neighbors.kde import KernelDensity
+from scipy.optimize import curve_fit
 # from tqdm import tqdm_notebook as tqdm
 from tqdm import tqdm as tqdm
 import pysam
@@ -114,7 +115,41 @@ def get_dists(x, y, orientation1, orientation2, L1, L2, gap):
     elif orientation1 == 1 and orientation2 == 1:
         return L2-y+x+gap
 
-def infer_from_config(df, contigs, contig_name, maxlength):
+def infer_from_contig2(df, contigs, contig_id, K=100000, K0=3000):
+    # generate global KDE estimation
+    C = df[(df['X1']==contig_id) & (df['X2']==contig_id)]
+    inter = np.abs(C['P1'].values - C['P2'].values)
+    kde = KernelDensity(kernel='gaussian', bandwidth=200).fit(inter.reshape(-1, 1))
+    f = lambda x: kde.score_samples(x.reshape(-1, 1))
+
+    # distant
+    x1 = np.logspace(np.log10(K0), np.log10(K), 500)
+    p = lambda x, a, b: a + b * np.log(x)
+    param1, cov = curve_fit(p, x1, f(x1))
+
+    # proximal
+    degree = 30
+    x0 = np.logspace(0, np.log10(K0), 500)
+    param0 = np.polyfit(x0, f(x0), degree)
+
+    # P = (lambda x: np.where( \
+    #         x < K0, \
+    #         np.poly1d(param0)(x), \
+    #         np.where(x < K, param1[0] + param1[1] * np.log(x), param1[0] + param1[1] * np.log(K)) \
+    #         ))
+    P = (lambda x: np.where( \
+            x < K0, \
+            param1[0] + param1[1] * np.log(K0), \
+            np.where(x < K, param1[0] + param1[1] * np.log(x), param1[0] + param1[1] * np.log(K)) \
+            ))
+    return P, f
+
+def infer_from_longest_contig2(df, contigs, K, K0):
+    lengths = np.array(contigs.lengths)
+    max_contig_id = np.argmax(lengths)
+    return infer_from_contig2(df, contigs, max_contig_id, K=K, K0=K0)
+
+def infer_from_contig(df, contigs, contig_name, maxlength):
     contig_id = contigs.get_id(contig_name)
     C = df[(df['X1']==contig_id) & (df['X2']==contig_id)]
     inter = np.abs(C['P1'].values - C['P2'].values)
@@ -198,27 +233,3 @@ def estimator_benchmark(inter, estimator, f, maxlength, output=None):
         plt.savefig(output)
     else:
         plt.show()
-
-if __name__ == '__main__':
-    psr = argparse.ArgumentParser()
-    psr.add_argument('--pickle', help='pickle filename of contacts')
-    psr.add_argument('--pandas', help='pandas')
-    psr.add_argument('--ref_r1', help='reference')
-    psr.add_argument('--ref_r2', help='reference')
-    psr.add_argument('--sam', help='contig sams for lengths')
-    psr.add_argument('--max_length', type=int, help='max length')
-    psr.add_argument('output', help='output npy filename')
-    args = psr.parse_args()
-    if args.ref_r1 and args.ref_r2:
-        print('infer from reference contact')
-        inter = get_intercontig_contacts(args.ref_r1, args.ref_r2)
-        f, raw = get_kde_polyfit_estimator(inter, N=100000, bandwidth=200, maxlength=150000, points=500, degree=50)
-    if args.pandas:
-        df = feather.read_dataframe(args.pandas)
-        if not (args.ref_r1 and args.ref_r2):
-            print('infer from longest contig')
-            f = infer_from_longest_contig(df, args.sam, args.output+'.png', maxlength=args.max_length, remove_repetitive=True)
-        sam = pysam.AlignmentFile(args.sam, 'r')
-        lengths = sam.lengths
-        prob = get_prob_pandas(df, lengths, f, remove_repetitive=True)
-        np.save(args.output, prob)
