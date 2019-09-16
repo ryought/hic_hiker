@@ -7,10 +7,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import logsumexp
 from matplotlib_scalebar.scalebar import ScaleBar
-from . import prob, layout, benchmark
+from . import prob, benchmark
 
 # Figure
-def fig_distribution(contigs, df, K):
+def fig_distribution(contigs, df, K, mode='default'):
     top = np.argsort(contigs.lengths)[::-1]
     K0 = 10**3.5
 	# generate top three estimators
@@ -19,15 +19,18 @@ def fig_distribution(contigs, df, K):
     _, raw_estimator_2         = prob.infer_from_contig2(df, contigs, top[2], K=K, K0=K0)
 
 	# draw plot
-    _fig_distribution(raw_estimator_0, raw_estimator_1, raw_estimator_2, estimator, K)
+    _fig_distribution(raw_estimator_0, raw_estimator_1, raw_estimator_2, estimator, K, mode)
 
-def _fig_distribution(raw_estimator_1st, raw_estimator_2nd, raw_estimator_3rd, estimator, K):
+def _fig_distribution(raw_estimator_1st, raw_estimator_2nd, raw_estimator_3rd, estimator, K, mode):
     """
     >>> fig_distribution()
     >>> plt.show()
     """
     width = K + 10000
-    x = np.linspace(1, width, 500)
+    if mode == 'default':
+        x = np.linspace(1, width, 500)
+    elif mode == 'log':
+        x = np.logspace(0, np.log10(width), 500)
 
     plt.xlabel('Separation Distance $d$ (bp)', fontsize=14)
     plt.ylabel('Contact Log Probability $\log p(d)$', fontsize=14)
@@ -35,6 +38,9 @@ def _fig_distribution(raw_estimator_1st, raw_estimator_2nd, raw_estimator_3rd, e
     plt.tick_params(axis='x', labelsize=14)
     plt.tick_params(axis='y', labelsize=14)
     plt.yscale('log')
+
+    if mode == 'log':
+        plt.xscale('log')
 
     plt.plot(x, np.exp(raw_estimator_1st(x)), label='1st longest contig', linewidth=1, alpha=0.9)
     plt.plot(x, np.exp(raw_estimator_2nd(x)), label='2nd longest contig', linewidth=1, alpha=0.9)
@@ -94,13 +100,29 @@ def parse_result(result):
 
 
 # Figure
-def fig_lengtherror():
-    pass
+def fig_length_error(contigs, layout, result_3d, result_hic):
+    results_with_length = []
+    for scaf_id in range(len(layout.scaffolds)):
+        for scaf_pos in range(len(layout.scaffolds[scaf_id].order)):
+            cid = layout.scaffolds[scaf_id].order[scaf_pos]
+            length = contigs.lengths[cid]
+            a = result_3d[scaf_id][scaf_pos]
+            b = result_hic[scaf_id][scaf_pos]
+            results_with_length.append((a, b, length))
 
+    bins = np.logspace(4, 6, num=20, base=10)
+    lens_erA = np.histogram([x[2] for x in results_with_length if x[0]=='orientation_error'], bins=bins)[0]
+    lens_erB = np.histogram([x[2] for x in results_with_length if x[1]=='orientation_error'], bins=bins)[0]
+    lens_all = np.histogram([x[2] for x in results_with_length], bins=bins)[0]
 
-
-
-
+    plt.xscale('log')
+    plt.plot(bins[:-1], lens_erA / lens_all * 100, label='3D-DNA', marker='o')
+    plt.plot(bins[:-1], lens_erB / lens_all * 100, label='HiC-Hiker', marker='o')
+    plt.xlabel('Contig Length (bp)', fontsize=18)
+    plt.ylabel('Local Error Rate (%)', fontsize=18)
+    plt.tick_params(labelsize=18)
+    plt.legend(fontsize=18)
+    plt.show()
 
 
 

@@ -132,16 +132,18 @@ def infer_from_contig2(df, contigs, contig_id, K=100000, K0=3000):
     x0 = np.logspace(0, np.log10(K0), 500)
     param0 = np.polyfit(x0, f(x0), degree)
 
-    # P = (lambda x: np.where( \
-    #         x < K0, \
-    #         np.poly1d(param0)(x), \
-    #         np.where(x < K, param1[0] + param1[1] * np.log(x), param1[0] + param1[1] * np.log(K)) \
-    #         ))
     P = (lambda x: np.where( \
             x < K0, \
-            param1[0] + param1[1] * np.log(K0), \
+            np.poly1d(param0)(x), \
             np.where(x < K, param1[0] + param1[1] * np.log(x), param1[0] + param1[1] * np.log(K)) \
             ))
+
+    # P = (lambda x: np.where( \
+    #         x < K0, \
+    #         param1[0] + param1[1] * np.log(K0), \
+    #         np.where(x < K, param1[0] + param1[1] * np.log(x), param1[0] + param1[1] * np.log(K)) \
+    #         ))
+
     return P, f
 
 def infer_from_longest_contig2(df, contigs, K, K0):
