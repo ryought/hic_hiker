@@ -33,7 +33,7 @@ def _fig_distribution(raw_estimator_1st, raw_estimator_2nd, raw_estimator_3rd, e
         x = np.logspace(0, np.log10(width), 500)
 
     plt.xlabel('Separation Distance $d$ (bp)', fontsize=14)
-    plt.ylabel('Contact Log Probability $\log p(d)$', fontsize=14)
+    plt.ylabel('Contact Probability $p(d)$', fontsize=14)
 
     plt.tick_params(axis='x', labelsize=14)
     plt.tick_params(axis='y', labelsize=14)
@@ -81,9 +81,12 @@ def fig_errorchart(results):
 	# show barplot
     print(labels, X)
     plt.bar(labels, X)
+    for l, x in zip(labels, X):
+        plt.text(l, x, '{:.3f}'.format(x), ha='center', va='center', fontsize=13)
+        # plt.text(l, x, 'hoge', ha='center', va='center', fontsize=15)
     plt.ylabel('Local Error Rate (%)', fontsize=18)
     plt.tick_params(axis='x', labelsize=18, rotation=90)
-    #plt.xticks(np.arange(k*4+2), names, rotation=90)
+    plt.tick_params(axis='y', labelsize=18)
 
     plt.tight_layout()
 
@@ -129,29 +132,37 @@ def fig_length_error(contigs, layout, result_3d, result_hic):
 
 # Figure
 def fig_matrix(probs, contigs, polished_layout, result):
-	fig = plt.figure(figsize=(8, 8), dpi=300)
+    fig = plt.figure(figsize=(8, 8), dpi=300)
 
-	# show selected matrixes
-	plt.subplot(2, 2, 1)
-	i = 200
-	_inspect_with_size(probs, polished_layout, contigs, result, scaf_id=0, pos=i)
+    # show selected matrixes
+    plt.subplot(2, 2, 1)
+    i = 200
+    _inspect_with_size(probs, polished_layout, contigs, result, scaf_id=0, pos=i)
+    plt.subplot(2, 2, 2)
+    i = 20
+    _inspect_with_size(probs, polished_layout, contigs, result, scaf_id=0, pos=i)
+    plt.subplot(2, 2, 3)
+    i = 138
+    _inspect_with_size(probs, polished_layout, contigs, result, scaf_id=0, pos=i)
+    plt.subplot(2, 2, 4)
+    i = 173
+    im = _inspect_with_size(probs, polished_layout, contigs, result, scaf_id=0, pos=i)
 
-	plt.subplot(2, 2, 2)
-	i = 20
-	_inspect_with_size(probs, polished_layout, contigs, result, scaf_id=0, pos=i)
+    # show colorbar (this parameter was set manually)
+    fig.subplots_adjust(right=0.9)
+    cbar_ax = fig.add_axes([0.93, 0.15, 0.02, 0.7])
+    fig.colorbar(im, cax=cbar_ax)
 
-	plt.subplot(2, 2, 3)
-	i = 138
-	_inspect_with_size(probs, polished_layout, contigs, result, scaf_id=0, pos=i)
+    # show axis indicator
+    plt.gcf().text(0.06, 0.98, '→ $j$')
+    plt.gcf().text(0.0,  0.94, '→ $i$', rotation=270)
 
-	plt.subplot(2, 2, 4)
-	i = 173
-	im = _inspect_with_size(probs, polished_layout, contigs, result, scaf_id=0, pos=i)
-
-	# show colorbar (this parameter was set manually)
-	fig.subplots_adjust(right=0.9)
-	cbar_ax = fig.add_axes([0.93, 0.15, 0.02, 0.7])
-	fig.colorbar(im, cax=cbar_ax)
+    # figure label
+    offset = 0.02
+    plt.gcf().text(0+offset, 1-offset, 'a', fontsize=15, fontweight='bold')
+    plt.gcf().text(0.45+offset, 1-offset, 'b', fontsize=15, fontweight='bold')
+    plt.gcf().text(0+offset, 0.51-offset, 'c', fontsize=15, fontweight='bold')
+    plt.gcf().text(0.45+offset, 0.51-offset, 'd', fontsize=15, fontweight='bold')
 
 def normalization_matrix(prob, orientations):
     X, Y = prob.shape
