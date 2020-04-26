@@ -17,6 +17,248 @@ df, contigs
 from .layout import Layout
 from .contigs import Contigs
 
+# new functions
+def create_db(df: pd.DataFrame, contigs: Contigs):
+    # db[x][y] = (i,j), x<=y, i<=j <=> rows df[i:j] are contacts between x and y
+    db: dict = {}
+    df.sort_values(['X1', 'X2'], inplace=True)
+    # get raw values of X1 and X2 column
+    X1, X2 = df.X1.values, df.X2.values
+    N = len(X1)
+    # accumlator
+    x1, x2 = 0, 0
+    pi = 0
+    for i in range(N):
+        if x1 != X1[i] or x2 != X2[i]:
+            if x1 not in db:  # not in keys
+                db[x1] = {}
+            if x2 in db[x1]:  # duplication
+                raise Exception('{} and {} appeared twice. Stopped.'.format(x1, x2))
+            # add entry
+            db[x1][x2] = (pi, i)
+            # update accumlator
+            x1, x2 = X1[i], X2[i]
+            pi = i
+    # fill the last segment
+    if x1 not in db:
+        db[x1] = {}
+    db[x1][x2] = (pi, i)
+    return db
+
+def get_scaffold_full_prob(scaffold, contigs):
+	emission = 0
+	for i in range(scaffold.N):
+		for j in range(i):
+			# prob between j ... i
+			oi = scaffold.orientation[i]
+			oj = scaffold.orientation[j]
+			Li = contigs.lengths[scaffold.order[i]]
+			Lj = contigs.lengths[scaffold.order[j]]
+			Lgap = sum([contigs. lengths[scaffold.order[x]] for x in range(j+1, i)])
+			prob = get_emission_prob(P1, P2, db, estimator, scaffold.order[j], scaffold.order[i], Lj, Li, Lgap)
+			emission += prob[oi*2 + oj]
+	return emission
+
+def get_emission_prob(P1, P2, db:dict, estimator, x:int, y:int, Lx:int, Ly:int, gapLength:int):
+    # assume [x] ----- [y]
+    # calc four probabilities (in case of 2x2 orientations) of x-th and y-th contigs (and given gapLength) efficiently
+    # target data is df[i:j]
+    if x <= y:
+        if x in db and y in db[x]:
+            i, j = db[x][y]
+            px, py = P1[i:j], P2[i:j]
+        else:
+            px, py = np.array([]), np.array([])
+    else:
+        if y in db and x in db[y]:
+            i, j = db[y][x]
+            px, py = P2[i:j], P1[i:j]
+        else:
+            px, py = np.array([]), np.array([])
+    # m is np.ndarray([[dists], [dists], [dists], [dists]])
+    m = np.stack([
+        Lx - px + py + gapLength,       # 0,0
+        px + py + gapLength,            # 1,0
+        Lx - px + Ly - py + gapLength,  # 0,1
+        Ly - py + px + gapLength        # 1,1
+        ])
+    # return value is np.ndarray([P(0,0), P(1,0), P(0,1), P(1,1)])
+    # P(ori_i,ori_j) = ret[2*ori_j + ori_i], ori_i,ori_j \in {0,1}
+    return np.sum(estimator(m), axis=1)
+
+# np.add.outerの3以上引数バージョン
+def many_outer(xs):
+	if len(xs) == 2:
+		return np.add.outer(xs[0], xs[1]).reshape(-1)
+	if len(xs) == 1:
+		return xs[0]
+	else:
+		return np.add.outer(many_outer(xs[:-1]), xs[-1]).reshape(-1)
+
+# a=(1,2,3,4) b=(5,6,7,8) take_alternate(a,b)=(1,5,2,6,3,7,4,8)
+def take_alternate(a, b):
+    assert a.shape == b.shape
+    res = np.empty(a.shape[0] + b.shape[0], dtype='float32')
+    res[0::2] = a
+    res[1::2] = b
+    return res
+
+# x=(x1,x2,x3,x4) y=(y1,y2) merge_outer(x,y)=(x1+y1, x2+y1, x3+y2, x4+y2)
+def merge_outer(x, y):
+    assert len(x) == len(y) * 2
+    x += np.repeat(y, 2)
+    return x
+
+def get_emission_vec(t, P1, P2, db, estimator, contigs, scaffold, perms, first=False):
+    # tにおけるemissionを計算する
+    # tは中心座標
+    # permsはpermutation
+    N = scaffold.N
+    W = len(perms[0])
+    if first:
+        # add up all contacts within this state
+        lst = []
+        for perm in perms:
+            pos = [t + offset for offset in perm]
+            if any(map(lambda x: x<0, pos)) or any(map(lambda x: x>=N, pos)):
+                z = np.ones(2**W, dtype='float32') * -np.inf
+                lst.append(z)
+            else:
+                ids = [scaffold.order[p] for p in pos]
+                lengths = [contigs.lengths[i] for i in ids]
+                #print('first mode', pos, ids, lengths)
+                accum = np.array([0, 0], dtype='float32')
+                for right in range(1, len(ids)):
+                    #print(right)
+                    #print([(left, right, ids[left], ids[right], sum(lengths[left+1:right])) for left in range(0, right)])
+                    parts = np.stack([
+                        get_emission_prob(
+                            P1, P2, db, estimator, ids[left], ids[right], lengths[left], lengths[right], sum(lengths[left+1:right])
+                        ) for left in range(0, right)
+                    ])
+                    jointed = take_alternate(
+                        many_outer(parts[:,0:2]),
+                        many_outer(parts[:,2:4])
+                    )
+                    #print('join!', jointed, accum)
+                    accum = merge_outer(jointed, accum)
+                    #print('joined', accum)
+                lst.append(accum)
+        return np.concatenate(lst)
+    else:
+        lst = []
+        for perm in perms:
+            # 配置が決まった時、一番後とそれ以外の要素とのprobを全部計算。
+            # pはtからのオフセットが書いてある
+            pos = [t + offset for offset in perm]
+            if any(map(lambda x: x<0, pos)) or any(map(lambda x: x>=N, pos)):
+                z = np.ones(2**W, dtype='float32') * -np.inf
+                lst.append(z)
+            else:
+                ids = [scaffold.order[p] for p in pos]
+                lengths = [contigs.lengths[i] for i in ids]
+                gaps = [sum(lengths[i+1:-1]) for i in range(len(ids)-1)]
+                parts = np.stack([
+                    get_emission_prob(P1, P2, db, estimator, ids[i], ids[-1], lengths[i], lengths[-1], gaps[i]) for i in range(len(ids)-1)
+                ])
+                #print(perm, pos, ids, lengths, gaps)
+                #print(parts)
+                #print(jointed)
+                # 前半同士、後半同士をくっつける
+                jointed = take_alternate(
+                    many_outer(parts[:,0:2]),
+                    many_outer(parts[:,2:4])
+                )
+                lst.append(jointed)
+        #print(lst)
+        return np.concatenate(lst)
+
+def run(w, contigs, scaffold, df_sorted, db, estimator):
+    perms, trans = preprocess(w)
+    print(perms, trans)
+    M = 2**(2*w+1)
+    N = len(perms)
+    n = scaffold.N  # TODO number of contigs
+    P1, P2 = df_sorted.P1.values, df_sorted.P2.values
+    viterbi = np.zeros((n, M*N), dtype='float32')
+    source  = np.zeros((n, M*N), dtype='uint16')
+    print('M*N=', M*N)
+    for t in range(w, n-w):  # loop over contig number
+        # emission `e`
+        if t == w:
+            emission_vec = get_emission_vec(t, P1, P2, db, estimator, contigs, scaffold, perms, first=True)
+        else:
+            emission_vec = get_emission_vec(t, P1, P2, db, estimator, contigs, scaffold, perms, first=False)
+        print('t=', t, 'emission=', emission_vec)
+        # transition `t`
+        for j in range(N):  # loop over state number
+            for k in range(M):
+                q = k // 2
+                transition = np.concatenate([trans[j] * M + q, trans[j] * M + q + M//2])
+                print(j*M + k, trans[j], transition)
+                picked = viterbi[t-1][transition]
+                print('picked', picked)
+                idx = np.argmax(picked)
+                source[t][j*M+k]  = idx
+                viterbi[t][j*M+k] = picked[idx]
+                print('choose', picked[idx], viterbi[t][j*M+k])
+        viterbi[t] += emission_vec
+    return viterbi, source
+
+import itertools
+
+def preprocess(w):
+	start = 0
+	permut = list(filter(lambda xs: len(xs) == len(set(xs)) and start in xs,
+		itertools.product(*[range(i-w, i+w+1) for i in range(start-w, start+w+1)])
+		))
+	# 先頭がどこにあるかを記録
+	prefix_dict = {}
+	for i, p in enumerate(permut):
+		ip = tuple(map(lambda x: x-1, p[1:]))
+		if ip not in prefix_dict:
+			prefix_dict[ip] = []
+		prefix_dict[ip].append(i)
+	# transition
+	trans = [ np.array(prefix_dict[p[:-1]], dtype='uint16') for p in permut]
+	return permut, trans
+
+def get_prob2(df: pd.DataFrame, contigs: Contigs, layout: Layout, estimator, max_k=None, remove_repetitive=False, show_progress=False):
+    # calc for each probabilities
+    index = [(0, 0), (0, 1), (1, 0), (1, 1)]
+    lengths = contigs.lengths
+
+    # prob matrixに変換する
+    # probsは各scaffoldに対応するprob matrixを入れるやつ
+    probs = []
+    for scaf in layout.scaffolds:
+        size = scaf.N
+        probs.append(np.zeros((size * 2, size * 2)))
+
+    P1, P2 = df.P1.values, df.P2.values
+    db = create_db(df, contigs)
+    for i, scaf in enumerate(layout.scaffolds):
+        for x1 in range(scaf.N):
+            for x2 in range(x1+1, scaf.N):
+                if (max_k and abs(x1 - x2) > max_k):
+                    # scaffoldが違うところに乗っていたり、
+                    # order上でk以上離れている確率は使わないので無視する
+                    pass
+                else:
+                    # position list
+                    I1, I2 = scaf.order[x1], scaf.order[x2]
+                    L1, L2 = lengths[I1], lengths[I2]
+                    # length list
+                    gap = sum([ lengths[scaf.order[x]] for x in range(min(x1, x2)+1, max(x1, x2))])
+
+                    p = get_emission_prob(P1, P2, db, estimator, I1,I2,L1,L2,gap)
+
+                    probs[i][2*x1 + 0, 2*x2 + 0] = p[0]
+                    probs[i][2*x1 + 1, 2*x2 + 0] = p[1]
+                    probs[i][2*x1 + 0, 2*x2 + 1] = p[2]
+                    probs[i][2*x1 + 1, 2*x2 + 1] = p[3]
+    return probs
+
 def get_prob(df: pd.DataFrame, contigs: Contigs, layout: Layout, estimator, max_k=None, remove_repetitive=False, show_progress=False):
     if remove_repetitive:
         # use only read that two "unique" flag are set
@@ -72,8 +314,12 @@ def get_prob(df: pd.DataFrame, contigs: Contigs, layout: Layout, estimator, max_
     groups = df.groupby(['X1', 'X2']).groups.items()
     print('iter version3')
     for (I1, I2), idx in tqdm(groups):
-        S1, X1 = layout.id2order(I1)
-        S2, X2 = layout.id2order(I2)
+        try:
+            S1, X1 = layout.id2order(I1)
+            S2, X2 = layout.id2order(I2)
+        except KeyError as e:
+            # this contig is not used in the layout.
+            continue
         # contig place
         if (S1 != S2) or (max_k and abs(X1 - X2) > max_k):
             # scaffoldが違うところに乗っていたり、
@@ -91,7 +337,9 @@ def get_prob(df: pd.DataFrame, contigs: Contigs, layout: Layout, estimator, max_
             L1, L2 = lengths[I1], lengths[I2]
             gap = sum([ lengths[scaf.order[x]] for x in range(min(X1, X2)+1, max(X1, X2))])
             assert S1 == S2
-            for i, (o1, o2) in enumerate(index):
+            for i, (ro1, ro2) in enumerate(index):
+                o1 = (1 - scaf.orientation[X1]) if ro1 == 1 else scaf.orientation[X1]
+                o2 = (1 - scaf.orientation[X2]) if ro2 == 1 else scaf.orientation[X2]
                 # get_distsはp1.x < p2.xを仮定しているので
                 if X1 < X2:
                     distances = get_dists(p1, p2, o1, o2, L1, L2, gap)
@@ -99,8 +347,8 @@ def get_prob(df: pd.DataFrame, contigs: Contigs, layout: Layout, estimator, max_
                     distances = get_dists(p2, p1, o2, o1, L2, L1, gap)
                 p = estimator(distances).sum()
                 # probは対称行列にならないとおかしい
-                probs[S1][2*X1 + o1, 2*X2 + o2] = p
-                probs[S1][2*X2 + o2, 2*X1 + o1] = p
+                probs[S1][2*X1 + ro1, 2*X2 + ro2] = p
+                probs[S1][2*X2 + ro2, 2*X1 + ro1] = p
     print('finished!')
     return probs
 
@@ -198,9 +446,6 @@ def get_kde_polyfit_estimator(samples, N=100000, bandwidth=200, maxlength=150000
     x = np.linspace(1, maxlength, points)
     z = np.polyfit(x, f(x), degree)
     return (lambda x: np.where(x<=maxlength, np.poly1d(z)(x), np.poly1d(z)(maxlength))), f
-
-def estimator_benchmark2(hoge):
-    print('hoge:', hoge)
 
 def estimator_benchmark(inter, estimator, f, maxlength, output=None):
     """estimator: kde, f: polyfitted"""

@@ -10,9 +10,8 @@ from matplotlib_scalebar.scalebar import ScaleBar
 from . import prob, benchmark
 
 # Figure
-def fig_distribution(contigs, df, K, mode='default'):
+def fig_distribution(contigs, df, K, K0=10**3.5, mode='default'):
     top = np.argsort(contigs.lengths)[::-1]
-    K0 = 10**3.5
 	# generate top three estimators
     estimator, raw_estimator_0 = prob.infer_from_contig2(df, contigs, top[0], K=K, K0=K0)
     _, raw_estimator_1         = prob.infer_from_contig2(df, contigs, top[1], K=K, K0=K0)
@@ -69,10 +68,11 @@ def fig_errorchart(results):
         k = ks[i]
         T[i] = 0
         F[i] = 0
-        for scaf_id in range(20):
-            ok, ng_ord, ng_ori = parse_result(results[k][scaf_id])
-            T[i] += ok
-            F[i] += ng_ori
+        for scaf_id in range(len(results[k])):
+            if len(results[k][scaf_id]) > 20:
+                ok, ng_ord, ng_ori = parse_result(results[k][scaf_id])
+                T[i] += ok
+                F[i] += ng_ori
 
 	# calculate error rates
     T, F = np.array(T), np.array(F)
@@ -84,7 +84,7 @@ def fig_errorchart(results):
     for l, x in zip(labels, X):
         plt.text(l, x, '{:.3f}'.format(x), ha='center', va='center', fontsize=13)
         # plt.text(l, x, 'hoge', ha='center', va='center', fontsize=15)
-    plt.ylabel('Local Error Rate (%)', fontsize=18)
+    plt.ylabel('Local Orientation Error (%)', fontsize=18)
     plt.tick_params(axis='x', labelsize=18, rotation=90)
     plt.tick_params(axis='y', labelsize=18)
 
@@ -112,41 +112,44 @@ def fig_length_error(contigs, layout, result_3d, result_hic):
             a = result_3d[scaf_id][scaf_pos]
             b = result_hic[scaf_id][scaf_pos]
             results_with_length.append((a, b, length))
+            # print((a, b, length))
 
-    bins = np.logspace(4, 6, num=20, base=10)
+    bins = np.logspace(np.log10(15000), 6, num=20, base=10)
     lens_erA = np.histogram([x[2] for x in results_with_length if x[0]=='orientation_error'], bins=bins)[0]
     lens_erB = np.histogram([x[2] for x in results_with_length if x[1]=='orientation_error'], bins=bins)[0]
-    lens_all = np.histogram([x[2] for x in results_with_length], bins=bins)[0]
+    lens_all = np.histogram([x[2] for x in results_with_length if x[1]=='orientation_error' or x[1]=='ok'], bins=bins)[0]
+    print('ok')
+    print(lens_erA)
+    print(lens_erB)
+    print(lens_all)
 
     plt.xscale('log')
     plt.plot(bins[:-1], lens_erA / lens_all * 100, label='3D-DNA', marker='o')
     plt.plot(bins[:-1], lens_erB / lens_all * 100, label='HiC-Hiker', marker='o')
     plt.xlabel('Contig Length (bp)', fontsize=18)
-    plt.ylabel('Local Error Rate (%)', fontsize=18)
+    plt.ylabel('Local Orientation Error (%)', fontsize=18)
     plt.tick_params(labelsize=18)
     plt.legend(fontsize=18)
-    plt.show()
-
-
+    plt.xlim(10**4, 10**6)
 
 
 # Figure
-def fig_matrix(probs, contigs, polished_layout, result):
+def fig_matrix(probs, contigs, polished_layout, ori_layout, result):
     fig = plt.figure(figsize=(8, 8), dpi=300)
 
     # show selected matrixes
     plt.subplot(2, 2, 1)
-    i = 200
-    _inspect_with_size(probs, polished_layout, contigs, result, scaf_id=0, pos=i)
+    i = 520
+    _inspect_with_size(probs, polished_layout, ori_layout, contigs, result, scaf_id=0, pos=i)
     plt.subplot(2, 2, 2)
-    i = 20
-    _inspect_with_size(probs, polished_layout, contigs, result, scaf_id=0, pos=i)
+    i = 806
+    _inspect_with_size(probs, polished_layout, ori_layout, contigs, result, scaf_id=0, pos=i)
     plt.subplot(2, 2, 3)
-    i = 138
-    _inspect_with_size(probs, polished_layout, contigs, result, scaf_id=0, pos=i)
+    i = 1248
+    _inspect_with_size(probs, polished_layout, ori_layout, contigs, result, scaf_id=0, pos=i)
     plt.subplot(2, 2, 4)
-    i = 173
-    im = _inspect_with_size(probs, polished_layout, contigs, result, scaf_id=0, pos=i)
+    i = 1338
+    im = _inspect_with_size(probs, polished_layout, ori_layout, contigs, result, scaf_id=0, pos=i)
 
     # show colorbar (this parameter was set manually)
     fig.subplots_adjust(right=0.9)
@@ -194,14 +197,21 @@ def matrix_by_range(mat, lengths, unit_length):
             M[X0:X1, Y0:Y1] = mat[i, j]
     return M
 
-def _inspect_with_size(probs, polished_layout, contigs, result, scaf_id, pos):
+def _inspect_with_size(probs, polished_layout, ori_layout, contigs, result, scaf_id, pos):
     i = pos  # short hand
     k = 5  # how many neighbor contigs on the matrix?
     unit_length = 10000  # 1 px corresponds to unit_length bp in the plot
 
     target = probs[scaf_id][2*i - k*2 : 2*i + (k+1)*2, 2*i - k*2 : 2*i + (k+1)*2]
     print(target.shape, len(polished_layout.scaffolds[scaf_id].order), len(result[scaf_id]))
-    orientations = polished_layout.scaffolds[scaf_id].orientation[i-k:i+k+1]
+    orientations = [
+        0 if polished_layout.scaffolds[scaf_id].orientation[x] == ori_layout.scaffolds[scaf_id].orientation[x] else 1
+        for x in range(i-k, i+k+1)
+    ]
+    # orientations = polished_layout.scaffolds[scaf_id].orientation[i-k:i+k+1]
+    print(polished_layout.scaffolds[scaf_id].orientation[i-k:i+k+1])
+    print(ori_layout.scaffolds[scaf_id].orientation[i-k:i+k+1])
+    print(orientations)
 
     M = normalization_matrix(target, orientations)
     lengths = [contigs.lengths[polished_layout.scaffolds[scaf_id].order[i+ind]] for ind in range(-k, k+1)]

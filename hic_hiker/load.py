@@ -52,6 +52,65 @@ def get_contacts_mnd(contigs, mnd_filename):
     )
     return df
 
+def get_contacts_paired_sam(contigs, sam_filename, is_bam):
+    R, X1, X2, P1, P2, U1, U2 = [], [], [], [], [], [], []
+    N, M_sub, M_sup, M_notfound, M_notmap = 0, 0, 0, 0, 0
+    if is_bam:
+        sam = pysam.AlignmentFile(sam_filename, 'rb')
+    else:
+        sam = pysam.AlignmentFile(sam_filename, 'r')
+
+    prev_query_name = None
+    for r in sam:
+        if r.is_supplementary or r.is_secondary:
+            # print('skipped because it is not main alignment', r)
+            M_sup += 1
+            continue
+        # assume the sam file is sorted by the query_name(read_name).
+        # and only the first alignment will be taken.
+        if prev_query_name and prev_query_name == r.query_name:
+            # multiple entries.
+            # print('skipped subreads', r)
+            M_sub += 1
+            continue
+        if r.is_unmapped or r.mate_is_unmapped:
+            # either of the pair is not mapped
+            M_notmap += 1
+            continue
+
+        try:
+            x1, x2 = contigs.get_id(r.reference_name), contigs.get_id(r.next_reference_name)
+            p1, p2 = r.reference_start, r.next_reference_start
+            # row X1 and X2 must satisfy X1 <= X2
+            if x1 <= x2:
+                X1.append(x1)
+                X2.append(x2)
+                P1.append(p1)
+                P2.append(p2)
+                U1.append(True)
+                U2.append(True)
+            elif x1 > x2:
+                X1.append(x2)
+                X2.append(x1)
+                P1.append(p2)
+                P2.append(p1)
+                U1.append(True)
+                U2.append(True)
+            R.append(r.query_name)
+            N += 1
+        except:
+            M_notfound += 1
+        prev_query_name = r.query_name
+    print(N, M_sup, M_sub, M_notfound, M_notmap)
+    print(len(R), len(U1))
+    df = pd.DataFrame(
+        data={'R':R, \
+              'X1':X1,'X2':X2, \
+              'P1':P1,'P2':P2, \
+              'U1':U1,'U2':U2}
+    )
+    return df
+
 def get_contacts_sam(contigs, sam_r1_filename, sam_r2_filename):
     """get Hi-C contacts from sam, which you can get by running 'bwa-mem' on contig fasta and Hi-C fastq."""
     sam_r1 = pysam.AlignmentFile(sam_r1_filename, 'r')

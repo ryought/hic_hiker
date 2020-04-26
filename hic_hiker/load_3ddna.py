@@ -51,7 +51,9 @@ class Assembly:
         for contig_id, (contig_name, contig_length) in enumerate(zip(names, lengths)):
             ls = contig_name.split(delimiter)
             if len(ls) > 1:
-                if ls[1] == 'fragment_1':
+                if ls[1] == 'debris':
+                    new_contigs.append((contig_id, contig_name, ls[0], 0, contig_length))
+                elif ls[1] == 'fragment_1':
                     new_contigs.append((contig_id, contig_name, ls[0], 0, contig_length))
                     x = contig_length
                 else:

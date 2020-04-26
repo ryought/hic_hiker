@@ -5,6 +5,7 @@
 from Bio.SeqRecord import SeqRecord
 from Bio import SeqIO
 from Bio.Seq import Seq
+import csv
 import pysam
 # internal
 from .contigs import Contigs
@@ -49,7 +50,7 @@ class Scaffold:
         # if self.name:
             # return "<Scaffold '{}' order:{} orientation:{} N:{}>".format(self.name, self.order, self.orientation, self.N)
         # else:
-        return "<Scaffold order:{} orientation:{} N:{}>".format(self.order, self.orientation, self.N)
+        return "<Scaffold name:{} order:{} orientation:{} N:{}>".format(self.name, self.order, self.orientation, self.N)
 
 class Layout:
     def __init__(self, scaffolds=None):
@@ -63,10 +64,14 @@ class Layout:
         self.scaffolds = []
         if scaffolds:
             for scaffold in scaffolds:
-                if isinstance(scaffold, Scaffold):
-                    self.scaffolds.append(scaffold)
-                else:
-                    raise Exception('class Layout only accepts instances of Scaffold')
+                # print(scaffold, isinstance(scaffold, Scaffold), type(scaffold), Scaffold, type(scaffold) is Scaffold)
+                # self.scaffolds.append(scaffold)
+                # if isinstance(scaffold, Scaffold):
+                # if type(scaffold) is Scaffold:
+                self.scaffolds.append(scaffold)
+                # else:
+                    # print('hoge', scaffold, type(scaffold))
+                    # raise Exception('class Layout only accepts instances of Scaffold')
         self.update()
     def id2order(self, contig_id):
         """this returns (<scaffold id the contig belongs to>, <its position in the scaffold>)"""
@@ -94,6 +99,52 @@ class Layout:
     def __repr__(self):
         return "<Layout {}>".format(self.scaffolds)
 
+def get_layout_from_agp(agp_filename: str, contigs: Contigs) -> Layout:
+    # assume that the agp file is sorted by scaffold name and its position.
+    with open(agp_filename, 'r') as f:
+        reader = csv.reader(f, delimiter='\t')
+        scaffolds, orders, orientations = [], [], []
+        now_scaf_name, now_scaf_pos = None, None
+        for row in reader:
+            # initialize
+            if not now_scaf_name:
+                now_scaf_name = row[0]
+            # when goes into the row of next scaffold
+            if now_scaf_name != row[0]:
+                # add the scaffold entry
+                scaf = Scaffold(order=orders, orientation=orientations, name=now_scaf_name)
+                scaffolds.append(scaf)
+                orders, orientations = [], []
+                now_scaf_name = row[0]
+            component_type = row[4]
+            if component_type == 'W':
+                contig_name = row[5]
+                contig_id = contigs.get_id(contig_name)
+                contig_ori = 0 if row[8] == '+' else 1
+                orders.append(contig_id)
+                orientations.append(contig_ori)
+                assert row[6] == '1'   # contig should be in full length
+        else:
+            scaf = Scaffold(order=orders, orientation=orientations, name=now_scaf_name)
+            scaffolds.append(scaf)
+    layout = Layout(scaffolds)
+    return layout
+
+def generate_assembly_from_layout(asm_filename, contigs, layout):
+    print('from layout')
+    text = ''
+    # first paragraph: list all contig id and its length
+    for i, (name, length) in enumerate(zip(contigs.names, contigs.lengths)):
+        cid = contigs.ids[name]
+        text += '>{} {} {}\n'.format(name, cid+1, length)
+    # list all scaffold order and orientations
+    for scaf in layout.scaffolds:
+        scaf_text = ' '.join([('-' if orientation == 1 else '') + str(cid+1) for (cid, orientation) in zip(scaf.order, scaf.orientation)])
+        text += scaf_text
+        text += '\n'
+    with open(asm_filename, mode='w') as f:
+        f.write(text)
+
 def get_reference_layout_from_sam(sam_filename: str, contigs: Contigs) -> Layout:
     """contigをreferenceにmapした結果のsam fileから、正解のlayoutを作る"""
     sam = pysam.AlignmentFile(sam_filename, 'r')
@@ -110,16 +161,23 @@ def get_reference_layout_from_sam(sam_filename: str, contigs: Contigs) -> Layout
         sorted_chr = sorted(records, key=lambda record: record[0])  # sort by its position
         order = [r[1] for r in sorted_chr]
         orientation = [1 if r[2] else 0 for r in sorted_chr]  # if is_reverse then 1 else 0
-        scaffolds.append(Scaffold(order=order, orientation=orientation, name=chr_name))
+        if len(order) > 0 and len(orientation) > 0:
+            scaffolds.append(Scaffold(order=order, orientation=orientation, name=chr_name))
     layout = Layout(scaffolds)
     return layout
 
-def get_fasta(layout: Layout, contigs: Contigs, filename: str):
-    """指定のレイアウトでcontigを並べたfastaを作る"""
+def get_fasta(layout: Layout, contigs: Contigs, filename: str, add_gap=False):
+    """
+    generate sequences as fasta (from contigs/layout) and save them as `filename`
+    If add_gap == True, N x 500 will be inserted between contigs
+    """
     output_scaffolds = []
     for (scaf_id, scaf) in enumerate(layout.scaffolds):
         scaf_sequence = Seq('')  # 空seq
-        for i, ori in zip(scaf.order, scaf.orientation):
+        for x, (i, ori) in enumerate(zip(scaf.order, scaf.orientation)):
+            if add_gap and x != 0:
+                # add Nx500 gap if this is not a first element
+                scaf_sequence += Seq('N') * 500
             if ori == 1:
                 # revcomp
                 scaf_sequence += contigs.sequences[i].reverse_complement()
@@ -127,7 +185,10 @@ def get_fasta(layout: Layout, contigs: Contigs, filename: str):
                 scaf_sequence += contigs.sequences[i]
             else:
                 print('ori does not match 0 or 1')
-        output_scaffolds.append(SeqRecord(scaf_sequence, 'hicscaffold_{:06}'.format(scaf_id), '', ''))
+        if scaf.name:
+            output_scaffolds.append(SeqRecord(scaf_sequence, scaf.name, '', ''))
+        else:
+            output_scaffolds.append(SeqRecord(scaf_sequence, 'hicscaffold_{:06}'.format(scaf_id), '', ''))
     SeqIO.write(output_scaffolds, filename, 'fasta')
     print('saved as', filename)
 

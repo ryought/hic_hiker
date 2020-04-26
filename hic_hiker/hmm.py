@@ -78,12 +78,15 @@ def optimize_layout(probs, contigs: Contigs, layout: Layout, k=None, K=None):
                 # scaffoldの順番にcontigのbp長さを入れたもの
                 scaffold_lengths = [contigs.lengths[contig_id] for contig_id in scaffold.order]
                 ks = get_ks_adaptive(scaffold_lengths, K)
+                print(ks)
             else:
                 raise Exception
 
             # update contig orientations of each scaffold
-            orientation, _, _, _ = run_hmm_adaptive(prob, ks)
-            new_scaffold = Scaffold(order=scaffold.order, orientation=orientation)
+            orientation_flip, _, _, _ = run_hmm_adaptive(prob, ks)
+            print('orientation flip', orientation_flip)
+            orientation = [1-o if ro == 1 else o for ro, o in zip(orientation_flip, scaffold.orientation)]
+            new_scaffold = Scaffold(order=scaffold.order, orientation=orientation, name=scaffold.name)
             new_scaffolds.append(new_scaffold)
     new_layout = Layout(new_scaffolds)
     print('ignored', Nignored, 'contigs')
@@ -109,6 +112,7 @@ def run_hmm_adaptive(prob, ks):
         states[0][j] = p0 + emission_prob(i=0, j=j, prob=prob, ks=ks)
 
     # for i in tqdm(range(1, N)):
+    # from tqdm import tqdm as tqdm
     for i in range(1, N):
         # time iに移行
         p = np.zeros(len(states[i-1]))

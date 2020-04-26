@@ -12,6 +12,16 @@ ORI_ERR = 'orientation_error'
 ORD_ERR = 'order_error'
 NONE = 'none'
 
+def parse_error_rate_from_result(result):
+    states, details = result
+    n_ori_err = len([r \
+             for scaf_result in result[0] if len(scaf_result) > 10 \
+             for r in scaf_result if r == ORI_ERR])
+    n_ok = len([r \
+             for scaf_result in result[0] if len(scaf_result) > 10 \
+             for r in scaf_result if r == OK])
+    return n_ori_err, n_ok
+
 def determine_correct_orientation_or_not(contigs: Contigs, layout: Layout, ref_layout: Layout):
     """
     2つのlayoutを比較する関数
